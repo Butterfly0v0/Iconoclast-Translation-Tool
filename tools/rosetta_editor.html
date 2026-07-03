@@ -1,0 +1,989 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Iconoclasts 字符表编辑器</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f0f0f;
+      --panel: #1a1a1a;
+      --border: #333;
+      --text: #eee;
+      --muted: #999;
+      --accent: #5b9cf5;
+      --ok: #6fcf97;
+      --warn: #f2c94c;
+      --danger: #eb5757;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header {
+      position: sticky; top: 0; z-index: 20;
+      background: var(--panel); border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.2rem; }
+    .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button, input, select, textarea {
+      background: #262626; color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 10px; font-size: 14px;
+    }
+    button { cursor: pointer; }
+    button.primary { background: #2f5491; border-color: #4a7fd4; }
+    button.ok { background: #256845; border-color: #3d9970; }
+    button:hover { filter: brightness(1.08); }
+    .stats { color: var(--muted); font-size: 13px; margin-top: 6px; }
+    .dirty { color: var(--warn); }
+    .saved { color: var(--ok); }
+    nav { display: flex; gap: 6px; margin-top: 10px; }
+    nav button { background: transparent; }
+    nav button.active { background: #2a2a2a; border-color: var(--accent); color: #fff; }
+    main { padding: 16px; max-width: 1400px; margin: 0 auto; }
+    .panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px; margin-bottom: 14px;
+    }
+    .hidden { display: none !important; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.table-resizable { table-layout: fixed; width: max-content; min-width: 100%; }
+    th, td { border-bottom: 1px solid #2a2a2a; padding: 8px; vertical-align: top; overflow-wrap: anywhere; }
+    .table-wrap { max-height: 65vh; overflow: auto; }
+    .table-wrap thead th {
+      position: sticky; top: 0; z-index: 2; background: var(--panel);
+      color: var(--muted); text-align: left; box-shadow: 0 1px 0 var(--border);
+      overflow: visible;
+    }
+    .col-resize {
+      position: absolute; right: 0; top: 0; bottom: 0; width: 7px;
+      cursor: col-resize; user-select: none; z-index: 3;
+    }
+    .col-resize:hover, .col-resize.active { background: var(--accent); opacity: 0.45; }
+    body.col-resizing { cursor: col-resize; user-select: none; }
+    .col-hint { font-size: 12px; color: var(--muted); }
+    .col-hint button {
+      background: none; border: none; color: var(--accent); padding: 0 4px;
+      font-size: 12px; text-decoration: underline; cursor: pointer;
+    }
+    tr:hover { background: #202020; cursor: pointer; }
+    tr.selected { background: #243048; }
+    tr.dialogue-done { opacity: 0.55; }
+    tr.dialogue-done:hover { opacity: 0.75; }
+    .mono { font-family: Consolas, monospace; color: #9fd; word-break: break-all; }
+    .en { color: #9fd; }
+    .cn { color: #fd9; }
+    .split { display: grid; grid-template-columns: 1fr 340px; gap: 14px; }
+    @media (max-width: 900px) { .split { grid-template-columns: 1fr; } }
+    .split > .panel:last-child { max-height: 75vh; overflow-y: auto; }
+    .pending-glyphs { margin-top: 4px; }
+    .pending-glyphs.hidden { display: none; }
+    .pending-glyphs h3 { font-size: 1rem; margin: 0 0 6px; color: var(--warn); }
+    .pending-glyphs-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 8px;
+    }
+    .pending-slot {
+      background: #141414; border: 1px solid var(--border); border-radius: 8px;
+      padding: 8px; text-align: center;
+    }
+    .pending-slot .idx-label {
+      font-family: Consolas, monospace; font-size: 11px; color: #9fd;
+      word-break: break-all; margin-bottom: 4px;
+    }
+    .pending-slot img {
+      width: 72px; height: 72px; image-rendering: pixelated;
+      background: #000; display: block; margin: 0 auto 4px;
+    }
+    .pending-slot .slot-meta { font-size: 11px; color: var(--muted); min-height: 14px; margin-bottom: 4px; }
+    .pending-slot input {
+      width: 100%; text-align: center; font-size: 20px; margin: 2px 0 6px;
+    }
+    .pending-slot button { width: 100%; font-size: 12px; padding: 6px; }
+    .dup-list { display: flex; flex-direction: column; gap: 12px; max-height: 70vh; overflow-y: auto; }
+    .dup-group {
+      background: #141414; border: 1px solid var(--border); border-radius: 10px; padding: 12px;
+    }
+    .dup-group.warn { border-color: var(--warn); }
+    .dup-head {
+      display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; flex-wrap: wrap;
+    }
+    .dup-char { font-size: 28px; line-height: 1; color: #fd9; }
+    .dup-meta { font-size: 13px; color: var(--warn); }
+    .dup-indices {
+      display: flex; flex-wrap: wrap; gap: 10px;
+    }
+    .dup-index-card {
+      background: #1a1a1a; border: 1px solid #333; border-radius: 8px;
+      padding: 8px; text-align: center; width: 96px; cursor: pointer;
+    }
+    .dup-index-card:hover { border-color: var(--accent); background: #222; }
+    .dup-index-card .idx-label {
+      font-family: Consolas, monospace; font-size: 11px; color: #9fd; margin-bottom: 4px;
+    }
+    .dup-index-card img {
+      width: 72px; height: 72px; image-rendering: pixelated;
+      background: #000; display: block; margin: 0 auto;
+    }
+    .dup-empty { color: var(--ok); padding: 20px; text-align: center; }
+    .glyph-lg {
+      width: 132px; height: 132px; image-rendering: pixelated;
+      background: #000; border: 1px solid #333; display: block; margin: 0 auto 10px;
+    }
+      width: 132px; height: 132px; image-rendering: pixelated;
+      background: #000; border: 1px solid #333; display: block; margin: 0 auto 10px;
+    }
+    .index-nav { display: flex; gap: 8px; justify-content: center; margin-top: 10px; }
+    .char-big {
+      width: 100%; text-align: center; font-size: 42px; padding: 10px;
+    }
+    .toast {
+      position: fixed; bottom: 16px; right: 16px; background: #1f3d2a;
+      border: 1px solid #3d9970; padding: 10px 14px; border-radius: 8px;
+      opacity: 0; transition: opacity .2s; z-index: 99;
+    }
+    .toast.show { opacity: 1; }
+    .toast.err { background: #3d1f1f; border-color: var(--danger); }
+    .modal-backdrop {
+      position: fixed; inset: 0; background: rgba(0,0,0,.65);
+      display: none; align-items: center; justify-content: center; z-index: 100;
+    }
+    .modal-backdrop.show { display: flex; }
+    .modal {
+      background: var(--panel); border: 1px solid var(--border); border-radius: 12px;
+      padding: 18px 20px; max-width: 520px; width: calc(100% - 32px);
+    }
+    .modal h3 { margin: 0 0 10px; color: var(--danger); font-size: 1rem; }
+    .modal ul { margin: 0 0 14px; padding-left: 20px; color: var(--text); font-size: 14px; }
+    .modal .bar { justify-content: flex-end; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    .grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px;
+    }
+    .card {
+      background: #141414; border: 1px solid var(--border); border-radius: 8px; padding: 8px;
+    }
+    .card img { width: 72px; height: 72px; image-rendering: pixelated; background: #000; display: block; margin: 0 auto; }
+    .card input { width: 100%; text-align: center; font-size: 20px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Iconoclasts 字符表编辑器</h1>
+    <div class="bar">
+      <button class="ok" id="btnSave">保存到 Rosetta_CN.txt</button>
+      <button id="btnReload">重新加载</button>
+      <span id="saveStatus" class="stats">加载中…</span>
+    </div>
+    <div class="stats" id="globalStats"></div>
+    <nav>
+      <button type="button" data-tab="dialogue" class="active">台词对照</button>
+      <button type="button" data-tab="index">按索引编辑</button>
+      <button type="button" data-tab="grid">字形网格</button>
+      <button type="button" data-tab="duplicates">重复索引</button>
+      <a href="translation_editor.html" style="margin-left:8px;color:var(--accent);font-size:14px;text-decoration:none;padding:8px 10px">译文编辑 →</a>
+    </nav>
+  </header>
+
+  <main>
+    <section id="tab-dialogue">
+      <div class="split">
+        <div class="panel">
+          <label>搜索英文台词 / 编码 / 索引</label>
+          <input id="dialogueSearch" placeholder="例如 LIAR、3399、骗子相关英文…" style="width:100%" />
+          <div class="bar" style="margin-top:8px">
+            <label style="margin:0; white-space:nowrap">筛选</label>
+            <select id="dialogueFilter" style="min-width:220px">
+              <option value="pending" selected>待对照（有未知索引）</option>
+              <option value="all">全部</option>
+              <option value="done">已完成</option>
+            </select>
+          </div>
+          <p class="stats" id="dialogueCount"></p>
+          <p class="col-hint">拖动表头右侧边线可调整列宽 · <button type="button" id="btnResetCols">重置列宽</button></p>
+          <div class="table-wrap">
+            <table id="dialogueTable">
+              <colgroup>
+                <col data-col="line" />
+                <col data-col="speaker_en" />
+                <col data-col="speaker_cn" />
+                <col data-col="en" />
+                <col data-col="cn_encoding" />
+                <col data-col="known" />
+              </colgroup>
+              <thead>
+                <tr>
+                  <th data-col="line">#</th>
+                  <th data-col="speaker_en">说话人(英)</th>
+                  <th data-col="speaker_cn">说话人(中)</th>
+                  <th data-col="en">英文</th>
+                  <th data-col="cn_encoding">中文编码</th>
+                  <th data-col="known">已知</th>
+                </tr>
+              </thead>
+              <tbody id="dialogueBody"></tbody>
+            </table>
+          </div>
+        </div>
+        <div class="panel">
+          <h3 style="margin-top:0">写入字符表</h3>
+          <p class="stats">选中一行后，输入你在游戏里看到的中文，点击应用。</p>
+          <label>中文索引串</label>
+          <input id="resolveIndices" class="mono" style="width:100%" readonly />
+          <label style="margin-top:10px">游戏内中文</label>
+          <input id="resolveText" placeholder="例如：骗子!" style="width:100%" />
+          <label style="margin-top:10px">英文对照</label>
+          <div id="resolveEn" class="en" style="min-height:40px"></div>
+          <div class="bar" style="margin-top:12px">
+            <button class="primary" id="btnResolve">应用到字符表并保存</button>
+          </div>
+          <pre id="resolveLog" class="stats mono" style="white-space:pre-wrap;margin-top:10px"></pre>
+          <div id="pendingGlyphsSection" class="pending-glyphs hidden">
+            <h3>待填索引</h3>
+            <p class="stats">以下中文编码尚无对应文字，请对照字形逐字录入：</p>
+            <div id="pendingGlyphsList" class="pending-glyphs-grid"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section id="tab-index" class="hidden">
+      <div class="panel" style="max-width:420px;margin:0 auto;text-align:center">
+        <label>索引 #</label>
+        <input id="indexInput" type="number" min="0" style="width:120px" />
+        <button id="btnIndexGo">跳转</button>
+        <img id="indexGlyph" class="glyph-lg" alt="glyph" />
+        <div class="stats" id="indexMeta"></div>
+        <input id="indexChar" class="char-big" maxlength="1" placeholder="?" />
+        <div class="index-nav">
+          <button id="btnPrev">← 上一个</button>
+          <button id="btnNext">下一个 →</button>
+        </div>
+        <button class="primary" id="btnIndexSave" style="margin-top:12px">保存此字</button>
+      </div>
+    </section>
+
+    <section id="tab-grid" class="hidden">
+      <div class="panel">
+        <div class="bar">
+          <select id="gridFilter">
+            <option value="needs">待填写（PUA 占位）</option>
+            <option value="all">全部 156+</option>
+            <option value="done">已填写</option>
+          </select>
+          <input id="gridJump" type="number" placeholder="跳转到 #" style="width:120px" />
+          <button id="btnGridJump">跳转</button>
+        </div>
+        <div class="grid" id="gridBody" style="margin-top:12px"></div>
+      </div>
+    </section>
+
+    <section id="tab-duplicates" class="hidden">
+      <div class="panel">
+        <p class="stats" id="dupSummary">扫描中…</p>
+        <label>搜索文字 / 索引</label>
+        <input id="dupSearch" placeholder="例如：骗、3399" style="width:100%; max-width:360px; margin-bottom:12px" />
+        <div id="dupList" class="dup-list"></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="toast" id="toast"></div>
+
+  <div class="modal-backdrop" id="conflictModal">
+    <div class="modal">
+      <h3>字符冲突确认</h3>
+      <p class="stats">以下索引在字符表中已有对应文字，是否强制替换？</p>
+      <ul id="conflictList"></ul>
+      <div class="bar">
+        <button type="button" id="conflictModalCancel">取消</button>
+        <button type="button" class="primary" id="conflictModalConfirm">强制替换</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="table_columns.js"></script>
+  <script>
+    const PUA_BASE = 0xE000;
+    const BASE = 156;
+    let lines = [];
+    let savedLines = [];
+    let meta = {};
+    let dialogue = [];
+    let selectedRow = null;
+    let dirty = false;
+    let maxIndex = 3454;
+    let pendingConflictAction = null;
+
+    const toast = document.getElementById("toast");
+    const saveStatus = document.getElementById("saveStatus");
+    const globalStats = document.getElementById("globalStats");
+    const conflictModal = document.getElementById("conflictModal");
+    const conflictList = document.getElementById("conflictList");
+
+    function isPua(ch) {
+      if (!ch || ch.length !== 1) return true;
+      const c = ch.charCodeAt(0);
+      return c >= PUA_BASE && c <= 0xF8FF;
+    }
+
+    function toastMsg(msg, err = false) {
+      toast.textContent = msg;
+      toast.classList.toggle("err", err);
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2600);
+    }
+
+    function updateStats() {
+      let filled = 0, pua = 0;
+      for (let i = BASE; i <= maxIndex; i++) {
+        const ch = lines[i] || "";
+        if (!ch) continue;
+        if (isPua(ch)) pua++; else filled++;
+      }
+      globalStats.textContent = `中文区：已填 ${filled} / 待填 ${pua}（索引 ${BASE}–${maxIndex}）`;
+      saveStatus.textContent = dirty ? "有未保存修改（内存中）" : "已与文件同步";
+      saveStatus.className = "stats " + (dirty ? "dirty" : "saved");
+    }
+
+    function formatProposed(ch) {
+      if (!ch || isPua(ch)) return "";
+      return ch;
+    }
+
+    function isRealChar(ch) {
+      return ch && ch.length === 1 && !isPua(ch);
+    }
+
+    function conflictMessage(c) {
+      return `#${c.index}已对应文字"${c.existing}"，是否强制替换为"${c.proposed}"`;
+    }
+
+    function checkLinesAgainstTable(currentLines, proposedLines, indices) {
+      const conflicts = [];
+      const check = indices || Array.from(
+        { length: Math.max(currentLines.length, proposedLines.length) },
+        (_, i) => i,
+      );
+      for (const index of check) {
+        const existing = currentLines[index] || "";
+        const proposed = proposedLines[index] || "";
+        if (proposed === existing) continue;
+        if (!isRealChar(existing)) continue;
+        conflicts.push({
+          index,
+          existing,
+          proposed: formatProposed(proposed),
+        });
+      }
+      return conflicts;
+    }
+
+    function parseBraceIndices(text) {
+      const indices = [];
+      const re = /\{#(\d+)\}/g;
+      let m;
+      while ((m = re.exec(text)) !== null) indices.push(parseInt(m[1], 10));
+      return indices;
+    }
+
+    function mappingFromResolve(indicesStr, text) {
+      if (!indicesStr.includes("{#")) return null;
+      const literalRe = /\{#\d+\}|[^{}]+/g;
+      const parts = indicesStr.match(literalRe) || [];
+      const indices = [];
+      let pos = 0;
+      for (const part of parts) {
+        const im = part.match(/^\{#(\d+)\}$/);
+        if (im) {
+          indices.push(parseInt(im[1], 10));
+          continue;
+        }
+        if (!text.startsWith(part, pos)) return null;
+        pos += part.length;
+      }
+      const remaining = text.slice(pos);
+      if (remaining.length !== indices.length) return null;
+      const mapping = {};
+      for (let i = 0; i < indices.length; i++) mapping[indices[i]] = remaining[i];
+      return mapping;
+    }
+
+    function checkMappingAgainstTable(mapping) {
+      const conflicts = [];
+      const baseline = savedLines.length ? savedLines : lines;
+      for (const [key, proposed] of Object.entries(mapping)) {
+        const index = parseInt(key, 10);
+        const existing = baseline[index] || "";
+        if (proposed === existing) continue;
+        if (!isRealChar(existing)) continue;
+        conflicts.push({ index, existing, proposed });
+      }
+      return conflicts;
+    }
+
+    function showConflicts(conflicts, onConfirm) {
+      conflictList.innerHTML = conflicts.map(c => `<li>${escapeHtml(conflictMessage(c))}</li>`).join("");
+      pendingConflictAction = onConfirm;
+      conflictModal.classList.add("show");
+    }
+
+    function hideConflictModal() {
+      conflictModal.classList.remove("show");
+      pendingConflictAction = null;
+    }
+
+    async function api(path, body) {
+      const res = await fetch(path, body ? {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      } : undefined);
+      const data = await res.json();
+      if (res.status === 409 && data.error === "glyph_index_conflict") {
+        const err = new Error(data.message || "字符表冲突");
+        err.indexConflicts = data.conflicts || [];
+        throw err;
+      }
+      if (!res.ok) throw new Error(data.error || data.message || res.statusText);
+      return data;
+    }
+
+    async function loadAll() {
+      const ro = await api("/api/rosetta");
+      lines = ro.lines;
+      maxIndex = ro.stats.max_index;
+      try {
+        meta = (await api("/api/meta")).entries || {};
+      } catch { meta = {}; }
+      const dlg = await fetch("dialogue_crossref.json");
+      dialogue = await dlg.json();
+      savedLines = lines.slice();
+      dirty = false;
+      updateStats();
+      renderDialogue();
+      renderGrid();
+      renderDuplicates();
+      showIndex(parseInt(document.getElementById("indexInput").value || "156", 10));
+    }
+
+    function buildDuplicateGroups() {
+      const charToIndices = new Map();
+      for (let i = 0; i <= maxIndex; i++) {
+        const ch = lines[i] || "";
+        if (!isRealChar(ch)) continue;
+        if (!charToIndices.has(ch)) charToIndices.set(ch, []);
+        charToIndices.get(ch).push(i);
+      }
+      const groups = [];
+      for (const [ch, indices] of charToIndices.entries()) {
+        if (indices.length >= 2) {
+          groups.push({ char: ch, indices: indices.sort((a, b) => a - b) });
+        }
+      }
+      groups.sort((a, b) => b.indices.length - a.indices.length || a.char.localeCompare(b.char, "zh"));
+      return groups;
+    }
+
+    function openIndexTab(index) {
+      document.querySelector('[data-tab="index"]').click();
+      showIndex(index);
+    }
+
+    function renderDuplicates() {
+      const groups = buildDuplicateGroups();
+      const q = (document.getElementById("dupSearch")?.value || "").trim().toLowerCase();
+      const list = document.getElementById("dupList");
+      const summary = document.getElementById("dupSummary");
+      list.innerHTML = "";
+
+      let shown = 0;
+      for (const group of groups) {
+        const hay = `${group.char} ${group.indices.join(" ")}`.toLowerCase();
+        if (q && !hay.includes(q)) continue;
+        shown++;
+
+        const box = document.createElement("div");
+        box.className = "dup-group warn";
+        const head = document.createElement("div");
+        head.className = "dup-head";
+        head.innerHTML = `
+          <span class="dup-char">${escapeHtml(group.char)}</span>
+          <span class="dup-meta">共 ${group.indices.length} 个索引：${group.indices.map(i => `#${i}`).join("、")}</span>`;
+        box.appendChild(head);
+
+        const row = document.createElement("div");
+        row.className = "dup-indices";
+        for (const index of group.indices) {
+          const card = document.createElement("div");
+          card.className = "dup-index-card";
+          card.title = "点击跳转到按索引编辑";
+          card.innerHTML = `
+            <div class="idx-label">{#${index}}</div>
+            <img src="glyphs/${String(index).padStart(5, "0")}.png" alt="${index}" loading="lazy" />`;
+          card.querySelector("img").onerror = (e) => { e.target.style.opacity = 0.2; };
+          card.addEventListener("click", () => openIndexTab(index));
+          row.appendChild(card);
+        }
+        box.appendChild(row);
+        list.appendChild(box);
+      }
+
+      if (!groups.length) {
+        summary.textContent = "未发现重复：每个已填文字仅对应一个索引。";
+        list.innerHTML = '<div class="dup-empty">✓ 字符表中没有重复映射</div>';
+        return;
+      }
+      if (!shown) {
+        summary.textContent = `共 ${groups.length} 个重复文字，当前筛选无结果`;
+        list.innerHTML = '<div class="dup-empty">无匹配项</div>';
+        return;
+      }
+      summary.textContent = q
+        ? `显示 ${shown} / ${groups.length} 个重复文字（共涉及 ${groups.reduce((n, g) => n + g.indices.length, 0)} 个索引）`
+        : `发现 ${groups.length} 个文字对应多个索引（共 ${groups.reduce((n, g) => n + g.indices.length, 0)} 个索引，请核对字形是否一致）`;
+    }
+
+    function charAtIndex(index) {
+      const ch = lines[index];
+      if (ch && !isPua(ch)) return ch;
+      return `{#${index}}`;
+    }
+
+    function decodeIndexRun(text) {
+      const out = [];
+      let i = 0;
+      while (i < text.length) {
+        if (text[i] === "|") {
+          i++;
+          continue;
+        }
+        if (text[i] < "0" || text[i] > "9") {
+          out.push(text[i]);
+          i++;
+          continue;
+        }
+        const start = i;
+        while (i < text.length && text[i] >= "0" && text[i] <= "9") i++;
+        out.push(charAtIndex(parseInt(text.slice(start, i), 10)));
+      }
+      return out.join("");
+    }
+
+    function splitBraceBlocks(text) {
+      const parts = [];
+      let i = 0;
+      while (i < text.length) {
+        if (text[i] === "{") {
+          const j = text.indexOf("}", i);
+          if (j === -1) {
+            parts.push(["text", text.slice(i)]);
+            break;
+          }
+          parts.push(["block", text.slice(i, j + 1)]);
+          i = j + 1;
+          if (i < text.length && text[i] === "|") i++;
+          continue;
+        }
+        let j = i;
+        while (j < text.length && text[j] !== "{") j++;
+        if (j > i) parts.push(["text", text.slice(i, j)]);
+        i = j;
+      }
+      return parts;
+    }
+
+    function decodeWithRosetta(text) {
+      if (!text) return text;
+      const chunks = [];
+      for (const [kind, segment] of splitBraceBlocks(text)) {
+        if (kind === "block") chunks.push(segment);
+        else chunks.push(decodeIndexRun(segment));
+      }
+      return chunks.join("");
+    }
+
+    function decodeSpeakerCn(raw) {
+      const text = (raw || "").trim();
+      if (!text) return "";
+      if (text.includes("{")) return decodeWithRosetta(text);
+      if (/^[\d|]+$/.test(text)) {
+        return text.split("|").filter(Boolean).map(i => charAtIndex(parseInt(i, 10))).join("");
+      }
+      return decodeWithRosetta(text);
+    }
+
+    function parseCnIndices(indicesStr) {
+      if (!indicesStr) return [];
+      return indicesStr.split(/\s+/).filter(s => /^\d+$/.test(s)).map(s => parseInt(s, 10));
+    }
+
+    function isIndexKnown(index) {
+      const ch = lines[index];
+      return !!(ch && !isPua(ch));
+    }
+
+    /** true=已完成, false=待对照, null=无中文索引（跳过筛选） */
+    function dialogueComplete(row) {
+      const indices = parseCnIndices(row.cn_indices);
+      if (!indices.length) return null;
+      return indices.every(isIndexKnown);
+    }
+
+    function knownPreview(indicesStr) {
+      if (!indicesStr) return "";
+      return parseCnIndices(indicesStr).map(i => (isIndexKnown(i) ? lines[i] : "?")).join("");
+    }
+
+    function renderDialogue() {
+      const q = document.getElementById("dialogueSearch").value.trim().toLowerCase();
+      const filter = document.getElementById("dialogueFilter").value;
+      const body = document.getElementById("dialogueBody");
+      body.innerHTML = "";
+      let shown = 0;
+      let doneCount = 0;
+      let pendingCount = 0;
+      for (const row of dialogue) {
+        const complete = dialogueComplete(row);
+        if (complete === true) doneCount++;
+        else if (complete === false) pendingCount++;
+        if (filter === "pending" && complete !== false) continue;
+        if (filter === "done" && complete !== true) continue;
+
+        const speakerCnLive = decodeSpeakerCn(row.speaker_cn_indices ?? row.speaker_cn ?? "");
+        if (q) {
+          const hay = `${row.line} ${row.speaker_en} ${speakerCnLive} ${row.en_text} ${row.cn_encoding} ${row.cn_indices}`.toLowerCase();
+          if (!hay.includes(q)) continue;
+        }
+        const tr = document.createElement("tr");
+        if (selectedRow && selectedRow.line === row.line) tr.classList.add("selected");
+        if (complete === true) tr.classList.add("dialogue-done");
+        tr.innerHTML = `
+          <td>${row.line}</td>
+          <td>${escapeHtml(row.speaker_en)}</td>
+          <td class="cn">${escapeHtml(speakerCnLive)}</td>
+          <td class="en">${escapeHtml(row.en_text)}</td>
+          <td class="mono">${escapeHtml(row.cn_braces || row.cn_encoding)}</td>
+          <td class="cn">${escapeHtml(knownPreview(row.cn_indices))}</td>`;
+        tr.onclick = () => selectDialogue(row);
+        body.appendChild(tr);
+        shown++;
+      }
+      const parts = [`显示 ${shown} 条`];
+      if (q || filter !== "all") parts.push(`（筛选后）`);
+      parts.push(`· 待对照 ${pendingCount} · 已完成 ${doneCount} · 共 ${dialogue.length}`);
+      document.getElementById("dialogueCount").textContent = parts.join(" ");
+    }
+
+    function unknownIndicesForRow(row) {
+      if (!row) return [];
+      return parseCnIndices(row.cn_indices).filter(i => !isIndexKnown(i));
+    }
+
+    function indexMetaText(index) {
+      const m = meta[String(index)] || {};
+      const parts = [];
+      if (m.ocr_guess) parts.push(`OCR: ${m.ocr_guess}`);
+      if (m.confidence) parts.push(`${(m.confidence * 100).toFixed(0)}%`);
+      return parts.join(" ");
+    }
+
+    function renderPendingGlyphs() {
+      const section = document.getElementById("pendingGlyphsSection");
+      const list = document.getElementById("pendingGlyphsList");
+      list.innerHTML = "";
+
+      if (!selectedRow || dialogueComplete(selectedRow) !== false) {
+        section.classList.add("hidden");
+        return;
+      }
+
+      const unknown = unknownIndicesForRow(selectedRow);
+      if (!unknown.length) {
+        section.classList.add("hidden");
+        return;
+      }
+
+      section.classList.remove("hidden");
+      for (const index of unknown) {
+        const slot = document.createElement("div");
+        slot.className = "pending-slot";
+        slot.innerHTML = `
+          <div class="idx-label">{#${index}}</div>
+          <img src="glyphs/${String(index).padStart(5, "0")}.png" alt="${index}" />
+          <div class="slot-meta">${escapeHtml(indexMetaText(index))}</div>
+          <input maxlength="1" placeholder="?" />
+          <button type="button" class="primary">保存</button>`;
+        const img = slot.querySelector("img");
+        img.onerror = () => { img.style.opacity = 0.2; };
+        const input = slot.querySelector("input");
+        const btn = slot.querySelector("button");
+        btn.addEventListener("click", () => {
+          const ch = input.value.trim().slice(-1);
+          if (!ch) {
+            toastMsg(`请输入 #${index} 对应的字`, true);
+            return;
+          }
+          saveIndexAt(index, ch);
+        });
+        input.addEventListener("keydown", (e) => {
+          if (e.key === "Enter") btn.click();
+        });
+        list.appendChild(slot);
+      }
+    }
+
+    function refreshSelectedDialoguePreview() {
+      if (!selectedRow) return;
+      document.getElementById("resolveText").value =
+        knownPreview(selectedRow.cn_indices).replace(/\?/g, "");
+    }
+
+    function selectDialogue(row) {
+      selectedRow = row;
+      document.getElementById("resolveIndices").value = row.cn_braces || "";
+      document.getElementById("resolveEn").textContent = row.en_text || "";
+      document.getElementById("resolveText").value = knownPreview(row.cn_indices).replace(/\?/g, "");
+      document.getElementById("resolveLog").textContent = "";
+      renderDialogue();
+      renderPendingGlyphs();
+    }
+
+    function escapeHtml(s) {
+      return (s || "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+    }
+
+    async function saveLines(forceReplace = false) {
+      if (!forceReplace) {
+        const conflicts = checkLinesAgainstTable(savedLines, lines);
+        if (conflicts.length) {
+          showConflicts(conflicts, () => saveLines(true));
+          return;
+        }
+      }
+      try {
+        const res = await api("/api/save", { lines, force_replace: forceReplace === true });
+        lines = res.lines || lines;
+        savedLines = lines.slice();
+        dirty = false;
+        updateStats();
+        renderDialogue();
+        renderGrid();
+        renderDuplicates();
+        toastMsg(forceReplace ? "已强制替换并保存" : "已保存 Rosetta_CN.txt");
+        if (res.written) saveStatus.textContent = "已写入: " + res.written.map(p => p.split("\\").pop()).join(", ");
+      } catch (e) {
+        if (e.indexConflicts) {
+          showConflicts(e.indexConflicts, () => saveLines(true));
+          return;
+        }
+        toastMsg(e.message, true);
+      }
+    }
+
+    async function applyResolve(forceReplace = false) {
+      const indices = document.getElementById("resolveIndices").value.trim();
+      const text = document.getElementById("resolveText").value;
+      if (!indices || !text) {
+        toastMsg("请填写索引和中文", true);
+        return;
+      }
+      if (!forceReplace) {
+        const mapping = mappingFromResolve(indices, text);
+        if (mapping) {
+          const conflicts = checkMappingAgainstTable(mapping);
+          if (conflicts.length) {
+            showConflicts(conflicts, () => applyResolve(true));
+            return;
+          }
+        }
+      }
+      try {
+        const body = {
+          indices,
+          text,
+          force: true,
+          save: true,
+          force_replace: forceReplace === true,
+        };
+        const res = await api("/api/resolve", body);
+        lines = res.lines;
+        savedLines = lines.slice();
+        dirty = false;
+        const log = res.changes.map(c =>
+          c.skipped ? `#${c.index} 跳过 (${c.old} -> ${c.new})` : `#${c.index}: ${JSON.stringify(c.old)} -> ${c.new}`
+        ).join("\n");
+        document.getElementById("resolveLog").textContent = log || "无变化";
+        updateStats();
+        renderDialogue();
+        renderGrid();
+        renderPendingGlyphs();
+        renderDuplicates();
+        refreshSelectedDialoguePreview();
+        toastMsg(forceReplace ? "已强制替换并应用" : "已应用并保存");
+      } catch (e) {
+        if (e.indexConflicts) {
+          showConflicts(e.indexConflicts, () => applyResolve(true));
+          return;
+        }
+        toastMsg(e.message, true);
+      }
+    }
+
+    function showIndex(index) {
+      index = Math.max(0, Math.min(maxIndex, index));
+      document.getElementById("indexInput").value = index;
+      const img = document.getElementById("indexGlyph");
+      img.src = `glyphs/${String(index).padStart(5, "0")}.png`;
+      img.onerror = () => { img.style.opacity = 0.2; };
+      img.onload = () => { img.style.opacity = 1; };
+      const ch = lines[index] || "";
+      document.getElementById("indexChar").value = isPua(ch) ? "" : ch;
+      document.getElementById("indexMeta").textContent =
+        `当前: ${ch ? (isPua(ch) ? "占位符" : ch) : "空"}`
+        + (indexMetaText(index) ? ` | ${indexMetaText(index)}` : "");
+    }
+
+    async function saveIndexAt(index, char, forceReplace = false) {
+      const ch = char ? char.slice(-1) : "";
+      if (!ch && !forceReplace) {
+        toastMsg("请输入一个汉字", true);
+        return;
+      }
+      if (!forceReplace) {
+        const baseline = savedLines.length ? savedLines : lines;
+        const existing = baseline[index] || "";
+        const proposed = formatProposed(ch);
+        if (isRealChar(existing) && proposed !== existing) {
+          showConflicts(
+            [{ index, existing, proposed }],
+            () => saveIndexAt(index, ch, true),
+          );
+          return;
+        }
+      }
+      try {
+        const res = await api("/api/set", { index, char: ch, force_replace: forceReplace === true });
+        lines = res.lines;
+        savedLines = lines.slice();
+        dirty = false;
+        updateStats();
+        renderDialogue();
+        renderGrid();
+        renderPendingGlyphs();
+        renderDuplicates();
+        refreshSelectedDialoguePreview();
+        toastMsg(forceReplace ? `#${index} 已强制替换为 ${ch}` : `#${index} 已保存为 ${ch}`);
+      } catch (e) {
+        if (e.indexConflicts) {
+          showConflicts(e.indexConflicts, () => saveIndexAt(index, ch, true));
+          return;
+        }
+        toastMsg(e.message, true);
+      }
+    }
+
+    async function saveIndexChar(forceReplace = false) {
+      const index = parseInt(document.getElementById("indexInput").value, 10);
+      const char = document.getElementById("indexChar").value;
+      await saveIndexAt(index, char, forceReplace);
+    }
+
+    function renderGrid() {
+      const mode = document.getElementById("gridFilter").value;
+      const body = document.getElementById("gridBody");
+      body.innerHTML = "";
+      for (let i = BASE; i <= maxIndex; i++) {
+        const ch = lines[i] || "";
+        const need = isPua(ch) || !ch;
+        if (mode === "needs" && !need) continue;
+        if (mode === "done" && need) continue;
+        const card = document.createElement("div");
+        card.className = "card";
+        card.dataset.index = i;
+        card.innerHTML = `
+          <div class="stats">#${i}</div>
+          <img src="glyphs/${String(i).padStart(5, "0")}.png" alt="${i}" loading="lazy" />
+          <input maxlength="1" placeholder="?" />`;
+        const input = card.querySelector("input");
+        input.value = isPua(ch) ? "" : ch;
+        input.addEventListener("change", () => {
+          lines[i] = input.value.slice(-1) || lines[i];
+          dirty = true;
+          updateStats();
+          renderDialogue();
+          renderDuplicates();
+        });
+        card.querySelector("img").onclick = () => {
+          document.querySelector('[data-tab="index"]').click();
+          showIndex(i);
+        };
+        body.appendChild(card);
+      }
+    }
+
+    document.querySelectorAll("nav button").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.querySelectorAll("nav button").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        ["dialogue", "index", "grid", "duplicates"].forEach(name => {
+          document.getElementById(`tab-${name}`).classList.toggle("hidden", btn.dataset.tab !== name);
+        });
+        if (btn.dataset.tab === "duplicates") renderDuplicates();
+      });
+    });
+
+    document.getElementById("dialogueSearch").addEventListener("input", renderDialogue);
+    document.getElementById("dialogueFilter").addEventListener("change", renderDialogue);
+    document.getElementById("btnSave").addEventListener("click", () => saveLines());
+    document.getElementById("btnReload").addEventListener("click", loadAll);
+    document.getElementById("btnResolve").addEventListener("click", () => applyResolve());
+    document.getElementById("btnIndexGo").addEventListener("click", () =>
+      showIndex(parseInt(document.getElementById("indexInput").value, 10)));
+    document.getElementById("btnPrev").addEventListener("click", () =>
+      showIndex(parseInt(document.getElementById("indexInput").value, 10) - 1));
+    document.getElementById("btnNext").addEventListener("click", () =>
+      showIndex(parseInt(document.getElementById("indexInput").value, 10) + 1));
+    document.getElementById("btnIndexSave").addEventListener("click", () => saveIndexChar());
+    document.getElementById("btnGridJump").addEventListener("click", () => {
+      const i = parseInt(document.getElementById("gridJump").value, 10);
+      const el = document.querySelector(`.card[data-index="${i}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      else toastMsg("当前筛选下找不到该索引", true);
+    });
+    document.getElementById("gridFilter").addEventListener("change", renderGrid);
+    document.getElementById("dupSearch").addEventListener("input", renderDuplicates);
+    document.getElementById("conflictModalCancel").addEventListener("click", hideConflictModal);
+    document.getElementById("conflictModalConfirm").addEventListener("click", () => {
+      const action = pendingConflictAction;
+      hideConflictModal();
+      if (action) action();
+    });
+    conflictModal.addEventListener("click", (e) => {
+      if (e.target === conflictModal) hideConflictModal();
+    });
+
+    loadAll().catch(err => toastMsg("加载失败: " + err.message, true));
+
+    const DIALOGUE_COL_WIDTHS = {
+      line: 52,
+      speaker_en: 88,
+      speaker_cn: 88,
+      en: 260,
+      cn_encoding: 380,
+      known: 88,
+    };
+    initResizableColumns(
+      document.getElementById("dialogueTable"),
+      "rosetta_editor_col_widths",
+      DIALOGUE_COL_WIDTHS,
+    );
+    document.getElementById("btnResetCols").addEventListener("click", () => {
+      resetColumnWidths(
+        document.getElementById("dialogueTable"),
+        "rosetta_editor_col_widths",
+        DIALOGUE_COL_WIDTHS,
+      );
+    });
+  </script>
+</body>
+</html>

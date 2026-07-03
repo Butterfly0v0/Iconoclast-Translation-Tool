@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Iconoclasts 译文编辑器</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #0f0f0f;
+      --panel: #1a1a1a;
+      --border: #333;
+      --text: #eee;
+      --muted: #999;
+      --accent: #5b9cf5;
+      --ok: #6fcf97;
+      --warn: #f2c94c;
+      --danger: #eb5757;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: "Segoe UI", system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header {
+      background: var(--panel); border-bottom: 1px solid var(--border);
+      padding: 12px 16px;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.2rem; }
+    .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+    button, input, select, textarea {
+      background: #262626; color: var(--text); border: 1px solid var(--border);
+      border-radius: 6px; padding: 8px 10px; font-size: 14px;
+    }
+    button { cursor: pointer; }
+    button.primary { background: #2f5491; border-color: #4a7fd4; }
+    button.ok { background: #256845; border-color: #3d9970; }
+    button.danger { background: #6b2a2a; border-color: #a44; }
+    button:hover { filter: brightness(1.08); }
+    .stats { color: var(--muted); font-size: 13px; }
+    main { padding: 16px; max-width: 1500px; margin: 0 auto; }
+    .layout { display: grid; grid-template-columns: 1fr 420px; gap: 14px; }
+    @media (max-width: 1000px) { .layout { grid-template-columns: 1fr; } }
+    .panel {
+      background: var(--panel); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    table.table-resizable { table-layout: fixed; width: max-content; min-width: 100%; }
+    th, td { border-bottom: 1px solid #2a2a2a; padding: 8px; vertical-align: top; overflow-wrap: anywhere; }
+    .table-wrap { max-height: 70vh; overflow: auto; }
+    .table-wrap thead th {
+      position: sticky; top: 0; z-index: 2;
+      text-align: left; color: var(--muted); background: var(--panel);
+      box-shadow: 0 1px 0 var(--border);
+      overflow: visible;
+    }
+    .col-resize {
+      position: absolute; right: 0; top: 0; bottom: 0; width: 7px;
+      cursor: col-resize; user-select: none; z-index: 3;
+    }
+    .col-resize:hover, .col-resize.active { background: var(--accent); opacity: 0.45; }
+    body.col-resizing { cursor: col-resize; user-select: none; }
+    .col-hint { font-size: 12px; color: var(--muted); }
+    .col-hint button {
+      background: none; border: none; color: var(--accent); padding: 0 4px;
+      font-size: 12px; text-decoration: underline; cursor: pointer;
+    }
+    tr:hover { background: #202020; cursor: pointer; }
+    tr.selected { background: #243048; }
+    tr.edited td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+    .en { color: #9fd; }
+    .cn { color: #fd9; }
+    .mono { font-family: Consolas, monospace; font-size: 12px; color: #adf; word-break: break-all; }
+    label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+    textarea { width: 100%; min-height: 120px; resize: vertical; line-height: 1.45; }
+    .toast {
+      position: fixed; bottom: 16px; right: 16px; background: #1f3d2a;
+      border: 1px solid #3d9970; padding: 10px 14px; border-radius: 8px;
+      opacity: 0; transition: opacity .2s; z-index: 99; max-width: 420px;
+    }
+    .toast.show { opacity: 1; }
+    .toast.err { background: #3d1f1f; border-color: var(--danger); }
+    .missing { color: var(--danger); font-size: 13px; margin-top: 8px; }
+    .help { font-size: 13px; color: var(--muted); line-height: 1.55; }
+    .help h3 { color: var(--text); font-size: 14px; margin: 12px 0 6px; }
+    .help ol { padding-left: 20px; }
+    a { color: var(--accent); }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Iconoclasts 译文编辑器</h1>
+    <div class="bar">
+      <button class="ok" id="btnRepack">打包写入游戏 diachn</button>
+      <button class="primary" id="btnSaveLine">保存当前行修改</button>
+      <button id="btnValidate">检查缺字</button>
+      <a href="rosetta_editor.html" style="margin-left:8px">← 字符表编辑器</a>
+    </div>
+    <p class="stats" id="status">加载中…</p>
+  </header>
+
+  <main>
+    <div class="layout">
+      <div class="panel">
+        <label>搜索英文 / 中文 / 行号</label>
+        <input id="search" placeholder="例如 LIAR、骗子、5" style="width:100%; margin-bottom:8px" />
+        <p class="stats" id="listCount"></p>
+        <p class="col-hint">拖动表头右侧边线可调整列宽 · <button type="button" id="btnResetCols">重置列宽</button></p>
+        <div class="table-wrap">
+          <table id="translationTable">
+            <colgroup>
+              <col data-col="line" />
+              <col data-col="speaker_en" />
+              <col data-col="speaker_cn" />
+              <col data-col="en" />
+              <col data-col="cn" />
+            </colgroup>
+            <thead>
+              <tr>
+                <th data-col="line">#</th>
+                <th data-col="speaker_en">英</th>
+                <th data-col="speaker_cn">中</th>
+                <th data-col="en">英文台词</th>
+                <th data-col="cn">当前中文</th>
+              </tr>
+            </thead>
+            <tbody id="listBody"></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="panel">
+        <h3 style="margin-top:0">编辑译文</h3>
+        <p class="stats">保留 <span class="mono">{bub06}{font02}…</span> 等标签，只改汉字部分。换行用 <span class="mono">{new}</span>。</p>
+        <label>行号 / 说话人</label>
+        <input id="lineInfo" readonly style="width:100%" />
+        <label style="margin-top:10px">英文对照</label>
+        <div id="enText" class="en" style="min-height:48px; margin-bottom:10px"></div>
+        <label>中文说话人（可选）</label>
+        <input id="speakerCn" style="width:100%" />
+        <label style="margin-top:10px">中文台词</label>
+        <textarea id="cnText"></textarea>
+        <div id="missingBox" class="missing"></div>
+        <div class="bar" style="margin-top:12px">
+          <input id="newChar" placeholder="缺字，如：龘" maxlength="1" style="width:80px" />
+          <input id="newCharIndex" placeholder="索引(可选)" style="width:100px" />
+          <button id="btnAddChar">加入字符表</button>
+        </div>
+        <details style="margin-top:16px">
+          <summary class="stats">打包说明 &amp; 超出字符表的字</summary>
+          <div class="help">
+            <h3>打包流程（本工具）</h3>
+            <ol>
+              <li>在此修改台词，点「保存当前行修改」</li>
+              <li>全部改完后点「打包写入游戏 diachn」</li>
+              <li>会自动备份原文件，并写入 <span class="mono">..\data\diachn</span></li>
+              <li>启动游戏验证</li>
+            </ol>
+            <h3>备用：CLI.exe + Poedit</h3>
+            <ol>
+              <li>运行 <span class="mono">bin\Release\net7.0\CLI.exe</span></li>
+              <li>Repack text → 输出到 <span class="mono">Repacked File\diachn</span></li>
+              <li>手动复制到游戏 <span class="mono">data\</span></li>
+            </ol>
+            <h3>译文里有字符表没有的字</h3>
+            <ol>
+              <li>点「检查缺字」查看缺失汉字</li>
+              <li>在下方输入该字，点「加入字符表」→ 自动占用下一个 PUA 空位</li>
+              <li>到 <a href="rosetta_editor.html">字符表编辑器</a> 确认映射，或替换 <span class="mono">tools/glyphs/NNNNN.png</span> 字形图</li>
+              <li>字体槽位上限约 <strong>3537</strong>（索引 0–3536）；无法自动新增 Assets.dat 字形，只能复用空槽或替换现有 PNG</li>
+            </ol>
+          </div>
+        </details>
+      </div>
+    </div>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script src="table_columns.js"></script>
+  <script>
+    let rows = [];
+    let selected = null;
+    let sourcePath = "";
+
+    async function api(path, body) {
+      const res = await fetch(path, body ? {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      } : undefined);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || JSON.stringify(data));
+      return data;
+    }
+
+    function toast(msg, err) {
+      const el = document.getElementById("toast");
+      el.textContent = msg;
+      el.className = "toast show" + (err ? " err" : "");
+      setTimeout(() => el.classList.remove("show"), 3500);
+    }
+
+    function escapeHtml(s) {
+      return (s || "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
+    }
+
+    function preview(s, n = 42) {
+      const t = (s || "").replace(/\{new\}/g, "↵");
+      return t.length > n ? t.slice(0, n) + "…" : t;
+    }
+
+    function renderList() {
+      const q = document.getElementById("search").value.trim().toLowerCase();
+      const body = document.getElementById("listBody");
+      body.innerHTML = "";
+      let shown = 0;
+      for (const row of rows) {
+        const hay = `${row.line} ${row.speaker_en} ${row.speaker_cn} ${row.en_text} ${row.cn_text}`.toLowerCase();
+        if (q && !hay.includes(q)) continue;
+        const tr = document.createElement("tr");
+        if (selected && selected.line === row.line) tr.classList.add("selected");
+        if (row.edited) tr.classList.add("edited");
+        tr.innerHTML = `
+          <td>${row.line}</td>
+          <td>${escapeHtml(row.speaker_en)}</td>
+          <td class="cn">${escapeHtml(row.speaker_cn)}</td>
+          <td class="en">${escapeHtml(preview(row.en_text))}</td>
+          <td class="cn">${escapeHtml(preview(row.cn_text))}</td>`;
+        tr.onclick = () => selectRow(row);
+        body.appendChild(tr);
+        shown++;
+      }
+      const edited = rows.filter(r => r.edited).length;
+      document.getElementById("listCount").textContent =
+        q ? `显示 ${shown} / ${rows.length} 条` : `共 ${rows.length} 条，已修改 ${edited} 条（待打包）`;
+    }
+
+    function selectRow(row) {
+      selected = row;
+      document.getElementById("lineInfo").value = `#${row.line}  ${row.speaker_en} → ${row.speaker_cn || "?"}`;
+      document.getElementById("enText").textContent = row.en_text || "";
+      document.getElementById("speakerCn").value = row.speaker_cn || "";
+      document.getElementById("cnText").value = (row.cn_text || "").replace(/\{new\}/g, "\n");
+      document.getElementById("missingBox").textContent = "";
+      renderList();
+    }
+
+    async function loadRows() {
+      const data = await api("/api/translations");
+      rows = data.rows;
+      sourcePath = data.source;
+      document.getElementById("status").textContent = `数据源：${sourcePath}`;
+      renderList();
+      if (rows.length && !selected) selectRow(rows[0]);
+    }
+
+    async function saveLine() {
+      if (!selected) return toast("请先选择一行", true);
+      const cn_text = document.getElementById("cnText").value.replace(/\n/g, "{new}");
+      const speaker_cn = document.getElementById("speakerCn").value;
+      try {
+        await api("/api/translation/save", {
+          line: parseInt(selected.line, 10),
+          cn_text,
+          speaker_cn,
+        });
+        selected.cn_text = cn_text;
+        selected.speaker_cn = speaker_cn;
+        selected.edited = true;
+        renderList();
+        toast("已保存（待打包）");
+      } catch (e) {
+        if (e.message.includes("missing") || e.message.includes("字符")) {
+          toast("有字符不在字符表中，请先加入字符表", true);
+        } else {
+          toast(e.message, true);
+        }
+      }
+    }
+
+    async function validateCurrent() {
+      const text = document.getElementById("cnText").value.replace(/\n/g, "{new}");
+      const speaker = document.getElementById("speakerCn").value;
+      const box = document.getElementById("missingBox");
+      try {
+        let missing = [];
+        const main = await api("/api/translation/validate", { text });
+        if (!main.ok) missing = missing.concat(main.missing);
+        if (speaker.trim()) {
+          const sp = await api("/api/translation/validate", { text: speaker });
+          if (!sp.ok) missing = missing.concat(sp.missing);
+        }
+        if (!missing.length) {
+          box.textContent = "✓ 所有字符均已在字符表中";
+          box.style.color = "var(--ok)";
+        } else {
+          box.style.color = "var(--danger)";
+          box.textContent = "缺少字符：" + missing.map(m => `${m.char} (${m.codepoint})`).join("、");
+        }
+      } catch (e) {
+        toast(e.message, true);
+      }
+    }
+
+    async function repack() {
+      if (!confirm("将把所有已保存的修改写入游戏 data\\diachn（会自动备份）？")) return;
+      try {
+        const res = await api("/api/translation/repack", { target: "game", backup: true });
+        toast(`已打包 ${res.applied} 条 → ${res.output.split("\\").pop()}`);
+        document.getElementById("status").textContent = `上次打包：${res.output}`;
+      } catch (e) {
+        toast(e.message, true);
+      }
+    }
+
+    async function addChar() {
+      const char = document.getElementById("newChar").value.trim();
+      const idxRaw = document.getElementById("newCharIndex").value.trim();
+      if (!char) return toast("请输入一个汉字", true);
+      try {
+        const body = { char, save: true };
+        if (idxRaw) body.index = parseInt(idxRaw, 10);
+        const res = await api("/api/translation/add-char", body);
+        toast(`已添加 #${res.index} ← ${res.char}`);
+        document.getElementById("newChar").value = "";
+      } catch (e) {
+        toast(e.message, true);
+      }
+    }
+
+    document.getElementById("search").addEventListener("input", renderList);
+    document.getElementById("btnSaveLine").onclick = saveLine;
+    document.getElementById("btnValidate").onclick = validateCurrent;
+    document.getElementById("btnRepack").onclick = repack;
+    document.getElementById("btnAddChar").onclick = addChar;
+
+    loadRows().catch(e => toast(e.message, true));
+
+    const TRANSLATION_COL_WIDTHS = {
+      line: 52,
+      speaker_en: 72,
+      speaker_cn: 72,
+      en: 280,
+      cn: 240,
+    };
+    initResizableColumns(
+      document.getElementById("translationTable"),
+      "translation_editor_col_widths",
+      TRANSLATION_COL_WIDTHS,
+    );
+    document.getElementById("btnResetCols").addEventListener("click", () => {
+      resetColumnWidths(
+        document.getElementById("translationTable"),
+        "translation_editor_col_widths",
+        TRANSLATION_COL_WIDTHS,
+      );
+    });
+  </script>
+</body>
+</html>

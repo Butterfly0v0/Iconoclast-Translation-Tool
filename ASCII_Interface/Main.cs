@@ -1,4 +1,5 @@
-﻿using System;
+using System;
+using System.IO;
 using System.Text;
 
 namespace CLI.ASCII_Interface
@@ -10,40 +11,36 @@ namespace CLI.ASCII_Interface
             Console.CursorVisible = false;
             currentSelection = 0;
 
-            PrintHeader();
-            PrintCommands();
+            Console.OutputEncoding = Encoding.UTF8;
+            Console.InputEncoding = Encoding.UTF8;
+
             configF = new ConfigFile.Main();
 
+            PrintHeader();
+            PrintCommands();
         }
 
-        /// <summary>
-        /// Contains the top of the interface.
-        /// </summary>
         private readonly string[] header = new[]{
                             @"  +----------------------------------------+",
                             @"  |      Iconoclast Translation Tool       |",
-                            @"  |       Version 1.01 (08 APR 2023)       |",
-                            @"  |              by Liquid S!              |",
+                            @"  |    Version 1.02 CN (Chinese support)   |",
+                            @"  |         Modified for Chinese text      |",
                             @"  +----------------------------------------+",
                             @""
          };
 
-        /// <summary>
-        /// Tells the user how to move through the menu.
-        /// </summary>
         private readonly string[] commands = new[]{
                             @"         Use UP, DOWN and ENTER to move",
                             @"               through the menu.",
                             @""
          };
 
-        /// <summary>
-        /// Contains the options from the Main Menu.
-        /// </summary>
         private readonly string[] mainMenu = new[]{
                             @"  +----------------------------------------+",
                             @"       Extract text",
                             @"       Repack text",
+                            @"       Copy dia from game",
+                            @"       Change language file",
                             @"       Change Folder",
                             @"       Save options",
                             @"       Load options",
@@ -52,24 +49,17 @@ namespace CLI.ASCII_Interface
                             @""
          };
 
-        /// <summary>
-        /// Its value determine what option should be highlighted.
-        /// </summary>
         private int currentSelection;
 
-        /// <summary>
-        /// Changes to "true" when the user press "Enter". This boolean is used by "PrintMainMenu" to do the action chosen by the user only after the Interface has been printed.
-        /// </summary>
         private bool doAction = false;
 
-        /// <summary>
-        /// Contains all the options saved from the user.
-        /// </summary>
         private readonly ConfigFile.Main configF;
 
         public void PrintHeader()
         {
             Console.WriteLine(string.Join("\n", header));
+            Console.WriteLine($"  Current language file: {configF.Options.DiaFileName}");
+            Console.WriteLine();
         }
 
         public void PrintCommands()
@@ -77,9 +67,6 @@ namespace CLI.ASCII_Interface
             Console.WriteLine(string.Join("\n", commands));
         }
 
-        /// <summary>
-        /// Print to console the FULL ASCII interface.
-        /// </summary>
         public void PrintFullInterface(ConsoleKey keyPressedByUser)
         {
             Console.Clear();
@@ -88,10 +75,6 @@ namespace CLI.ASCII_Interface
             PrintMainMenu(keyPressedByUser);
         }
 
-        /// <summary>
-        /// Print to console the Main Menu.
-        /// </summary>
-        /// <param name="keyPressedByUser">The key pressed by the user.</param>
         public void PrintMainMenu(ConsoleKey keyPressedByUser)
         {
             doAction = false;
@@ -106,17 +89,12 @@ namespace CLI.ASCII_Interface
             }
         }
 
-        /// <summary>
-        /// Print to console the menu and highlight the current focused option.
-        /// </summary>
-        /// <param name="menu">Menu where the user is.</param>
         private void PrintMenuAndHighlightFocusedOption(string[] menu)
         {
             for (int i = 0; i < menu.Length; i++)
             {
                 if (i == currentSelection)
                 {
-                    // Highlight the focused option.
                     Console.BackgroundColor = ConsoleColor.DarkYellow;
                     Console.ForegroundColor = ConsoleColor.Black;
 
@@ -135,11 +113,6 @@ namespace CLI.ASCII_Interface
             }
         }
 
-        /// <summary>
-        /// Update "currentSelection" or execute the option chosen by the user. 
-        /// </summary>
-        /// <param name="keyPressedByUser"></param>
-        /// <param name="menuSize"></param>
         private void UpdatePositionOrExecuteOption(ConsoleKey keyPressedByUser, int menuSize)
         {
             switch (keyPressedByUser)
@@ -169,36 +142,78 @@ namespace CLI.ASCII_Interface
             switch (currentSelection)
             {
                 case 1:
-                    IO_ASCII.PrintOutput.EventMessage("Wait...");
-                    Iconoclast.Dia originalDiaFile = new Iconoclast.Dia("dia");
-                    Iconoclast.PoFormat filePo = new Iconoclast.PoFormat(originalDiaFile.Speakers, originalDiaFile.Sentences, originalDiaFile.GameCode);
-                    Iconoclast.PoSpeaker newFilePoSpeaker = new Iconoclast.PoSpeaker(originalDiaFile.Speakers);
-                    filePo.MakePo();
-                    IO_ASCII.PrintOutput.EventMessage("Done!");
+                    ExtractText();
                     break;
                 case 2:
-                    IO_ASCII.PrintOutput.EventMessage("Wait...");
-
-                    Iconoclast.PoFormat translatedPo = new Iconoclast.PoFormat(System.IO.Path.Combine("Extracted text", "Iconoclast.po"));
-                    Iconoclast.PoSpeaker filePoSpeaker = new Iconoclast.PoSpeaker();
-                    filePoSpeaker.ReadPo();
-                    Iconoclast.Dia newlDiaFile = new Iconoclast.Dia(translatedPo.Speakers, translatedPo.Sentences, translatedPo.GameCode, filePoSpeaker.TranslateSpeaker);
-                    newlDiaFile.BuildDia();
-
-                    IO_ASCII.PrintOutput.EventMessage("Done!");
+                    RepackText();
                     break;
                 case 3:
-                    configF.Options.SetPoFolderPath();
+                    configF.Options.CopyDiaFromGame();
                     break;
                 case 4:
-                    configF.SaveFile();
+                    configF.Options.CycleDiaFileName();
                     break;
                 case 5:
+                    configF.Options.SetPoFolderPath();
+                    break;
+                case 6:
+                    configF.SaveFile();
+                    break;
+                case 7:
                     configF.LoadFile();
                     break;
                 default:
                     Environment.Exit(0);
                     break;
+            }
+        }
+
+        private void ExtractText()
+        {
+            try
+            {
+                IO_ASCII.PrintOutput.EventMessage("Wait...");
+
+                string diaPath = configF.Options.ResolveGameDiaPath();
+                if (!File.Exists(diaPath))
+                {
+                    IO_ASCII.PrintOutput.ErrorMessage($"Could not find \"{diaPath}\". Use \"Copy dia from game\" first.");
+                    return;
+                }
+
+                Iconoclast.Dia originalDiaFile = new Iconoclast.Dia(diaPath, configF.Options.DiaFileName);
+                Iconoclast.PoFormat filePo = new Iconoclast.PoFormat(originalDiaFile.Speakers, originalDiaFile.Sentences, originalDiaFile.GameCode);
+                Iconoclast.PoSpeaker newFilePoSpeaker = new Iconoclast.PoSpeaker(originalDiaFile.Speakers);
+                filePo.MakePo();
+                IO_ASCII.PrintOutput.EventMessage("Done!");
+            }
+            catch (Exception ex)
+            {
+                IO_ASCII.PrintOutput.ErrorMessage(ex.Message);
+            }
+        }
+
+        private void RepackText()
+        {
+            try
+            {
+                IO_ASCII.PrintOutput.EventMessage("Wait...");
+
+                Iconoclast.PoFormat translatedPo = new Iconoclast.PoFormat(Path.Combine("Extracted text", "Iconoclast.po"));
+                Iconoclast.PoSpeaker filePoSpeaker = new Iconoclast.PoSpeaker();
+                filePoSpeaker.ReadPo();
+                Iconoclast.Dia newlDiaFile = new Iconoclast.Dia(
+                    translatedPo.Speakers,
+                    translatedPo.Sentences,
+                    translatedPo.GameCode,
+                    filePoSpeaker.TranslateSpeaker,
+                    configF.Options.DiaFileName);
+
+                IO_ASCII.PrintOutput.EventMessage($"Done! Output: Repacked File\\{configF.Options.DiaFileName}");
+            }
+            catch (Exception ex)
+            {
+                IO_ASCII.PrintOutput.ErrorMessage(ex.Message);
             }
         }
     }

@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Iconoclasts 字形标注</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #111;
+      --panel: #1b1b1b;
+      --border: #333;
+      --text: #eee;
+      --muted: #999;
+      --accent: #6ea8fe;
+      --ok: #7dcea0;
+      --warn: #f5b041;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Segoe UI", system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: var(--panel);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    h1 { margin: 0 0 8px; font-size: 1.25rem; }
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: center;
+    }
+    button, input, select {
+      background: #2a2a2a;
+      color: var(--text);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 14px;
+    }
+    button { cursor: pointer; }
+    button.primary { background: #2d4a7a; border-color: #4a6fa5; }
+    button:hover { filter: brightness(1.08); }
+    .stats { color: var(--muted); font-size: 13px; margin-top: 8px; }
+    main { padding: 16px 20px 40px; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+      gap: 12px;
+    }
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .card.done { border-color: #355f45; }
+    .card.placeholder { border-color: #6b4f1d; }
+    .card img {
+      width: 88px;
+      height: 88px;
+      image-rendering: pixelated;
+      background: #000;
+      border: 1px solid #222;
+      align-self: center;
+    }
+    .idx { font-size: 12px; color: var(--muted); }
+    .char-input {
+      width: 100%;
+      text-align: center;
+      font-size: 22px;
+      padding: 6px;
+    }
+    .meta { font-size: 11px; color: var(--muted); min-height: 28px; }
+    .hidden { display: none !important; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background: #243;
+      border: 1px solid #486;
+      padding: 10px 14px;
+      border-radius: 8px;
+      opacity: 0;
+      transition: opacity .2s;
+    }
+    .toast.show { opacity: 1; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Iconoclasts 字形标注 → Rosetta_CN.txt</h1>
+    <div class="toolbar">
+      <label>筛选
+        <select id="filter">
+          <option value="needs">待标注 / 占位符</option>
+          <option value="all">全部</option>
+          <option value="done">已标注</option>
+        </select>
+      </label>
+      <input id="search" type="number" placeholder="跳转到索引 #" style="width:140px" />
+      <button id="jump">跳转</button>
+      <button id="saveLocal">保存到浏览器</button>
+      <button class="primary" id="exportRosetta">导出 Rosetta_CN.txt</button>
+      <button id="exportJson">导出标注 JSON</button>
+      <label><input type="file" id="importRosetta" accept=".txt" /> 导入 Rosetta_CN.txt</label>
+    </div>
+    <div class="stats" id="stats">加载中…</div>
+  </header>
+  <main>
+    <div class="grid" id="grid"></div>
+  </main>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const PUA_BASE = 0xE000;
+    const BASE_COUNT = 156;
+    const STORAGE_KEY = "iconoclasts_glyph_labels_v1";
+
+    let baseRosetta = [];
+    let labels = {};
+    let meta = {};
+    let maxIndex = 3454;
+
+    const grid = document.getElementById("grid");
+    const stats = document.getElementById("stats");
+    const filterEl = document.getElementById("filter");
+    const toast = document.getElementById("toast");
+
+    function isPlaceholder(ch) {
+      if (!ch || ch.length !== 1) return true;
+      const code = ch.charCodeAt(0);
+      return code >= PUA_BASE && code <= 0xF8FF;
+    }
+
+    function toastMsg(msg) {
+      toast.textContent = msg;
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 2200);
+    }
+
+    async function loadText(path) {
+      const res = await fetch(path);
+      if (!res.ok) throw new Error(`无法加载 ${path}`);
+      return res.text();
+    }
+
+    async function init() {
+      try {
+        baseRosetta = (await loadText("../Rosetta.txt")).replace(/\r/g, "").split("\n").filter(Boolean);
+      } catch {
+        baseRosetta = [];
+      }
+
+      try {
+        const metaJson = JSON.parse(await loadText("rosetta_ocr_meta.json"));
+        maxIndex = metaJson.max_index ?? maxIndex;
+        for (const [k, v] of Object.entries(metaJson.entries ?? {})) {
+          meta[k] = v;
+          if (v.char && !isPlaceholder(v.char)) labels[k] = v.char;
+        }
+      } catch {
+        console.warn("无 rosetta_ocr_meta.json，将仅使用本地标注");
+      }
+
+      try {
+        const cn = (await loadText("../Rosetta_CN.txt")).replace(/\r/g, "").split("\n");
+        cn.forEach((ch, i) => {
+          if (ch && !isPlaceholder(ch)) labels[String(i)] = ch;
+        });
+        maxIndex = Math.max(maxIndex, cn.length - 1);
+      } catch {}
+
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        Object.assign(labels, JSON.parse(saved));
+      }
+
+      render();
+    }
+
+    function currentChar(index) {
+      const key = String(index);
+      if (labels[key]) return labels[key];
+      if (index < baseRosetta.length && baseRosetta[index]) return baseRosetta[index];
+      return "";
+    }
+
+    function needsWork(index) {
+      const ch = currentChar(index);
+      return index >= BASE_COUNT && (!ch || isPlaceholder(ch));
+    }
+
+    function updateStats() {
+      let done = 0, need = 0;
+      for (let i = BASE_COUNT; i <= maxIndex; i++) {
+        if (needsWork(i)) need++; else done++;
+      }
+      stats.textContent = `索引 0–${maxIndex} | 中文区已标注 ${done} | 待标注 ${need}`;
+    }
+
+    function render() {
+      grid.innerHTML = "";
+      const mode = filterEl.value;
+      updateStats();
+
+      for (let i = 0; i <= maxIndex; i++) {
+        const ch = currentChar(i);
+        const need = needsWork(i);
+        if (mode === "needs" && !need) continue;
+        if (mode === "done" && need) continue;
+
+        const card = document.createElement("article");
+        card.className = "card" + (need ? " placeholder" : " done");
+        card.dataset.index = i;
+
+        const img = document.createElement("img");
+        img.src = `glyphs/${String(i).padStart(5, "0")}.png`;
+        img.alt = `#${i}`;
+        img.onerror = () => { img.classList.add("hidden"); };
+
+        const idx = document.createElement("div");
+        idx.className = "idx";
+        idx.textContent = `#${i}`;
+
+        const input = document.createElement("input");
+        input.className = "char-input";
+        input.maxLength = 1;
+        input.value = ch && !isPlaceholder(ch) ? ch : "";
+        input.placeholder = "?";
+        input.addEventListener("input", () => {
+          const val = input.value;
+          if (!val) {
+            delete labels[String(i)];
+          } else {
+            labels[String(i)] = val.slice(-1);
+          }
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(labels));
+          card.classList.toggle("done", !needsWork(i));
+          card.classList.toggle("placeholder", needsWork(i));
+          updateStats();
+        });
+
+        const metaEl = document.createElement("div");
+        metaEl.className = "meta";
+        const m = meta[String(i)];
+        if (m?.source) {
+          metaEl.textContent = `${m.source}${m.confidence ? ` (${(m.confidence * 100).toFixed(0)}%)` : ""}${m.ocr_guess ? ` · 猜测: ${m.ocr_guess}` : ""}`;
+        }
+
+        card.append(img, idx, input, metaEl);
+        grid.appendChild(card);
+      }
+    }
+
+    function buildRosettaLines() {
+      const lines = [];
+      for (let i = 0; i <= maxIndex; i++) {
+        let ch = currentChar(i);
+        if (!ch) {
+          if (i < baseRosetta.length && baseRosetta[i]) ch = baseRosetta[i];
+          else if (i >= BASE_COUNT) ch = String.fromCharCode(PUA_BASE + (i - BASE_COUNT));
+          else ch = "";
+        }
+        lines.push(ch);
+      }
+      return lines;
+    }
+
+    function download(filename, content) {
+      const blob = new Blob([content], { type: "text/plain;charset=utf-8" });
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+
+    document.getElementById("exportRosetta").addEventListener("click", () => {
+      const lines = buildRosettaLines();
+      download("Rosetta_CN.txt", lines.join("\n") + "\n");
+      toastMsg("已导出 Rosetta_CN.txt");
+    });
+
+    document.getElementById("exportJson").addEventListener("click", () => {
+      download("glyph_labels.json", JSON.stringify(labels, null, 2));
+      toastMsg("已导出 glyph_labels.json");
+    });
+
+    document.getElementById("saveLocal").addEventListener("click", () => {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(labels));
+      toastMsg("已保存到浏览器");
+    });
+
+    document.getElementById("importRosetta").addEventListener("change", async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+      const text = await file.text();
+      text.replace(/\r/g, "").split("\n").forEach((ch, i) => {
+        if (ch && !isPlaceholder(ch)) labels[String(i)] = ch;
+      });
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(labels));
+      render();
+      toastMsg("已导入 Rosetta_CN.txt");
+    });
+
+    filterEl.addEventListener("change", render);
+
+    document.getElementById("jump").addEventListener("click", () => {
+      const n = Number(document.getElementById("search").value);
+      const el = grid.querySelector(`[data-index="${n}"]`);
+      if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+    });
+
+    init();
+  </script>
+</body>
+</html>

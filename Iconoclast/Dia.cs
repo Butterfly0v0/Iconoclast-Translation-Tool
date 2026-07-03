@@ -1,40 +1,51 @@
-﻿using System.Collections.Generic;
+using System.Collections.Generic;
 using System.IO;
+using System.Text;
+using System.Text.RegularExpressions;
 
 namespace Iconoclast
 {
     public class Dia
     {
+        private static readonly Encoding TextEncoding = Encoding.UTF8;
+
+        private static readonly Regex IndexPlaceholderRegex = new Regex(@"\{#(\d+)\}", RegexOptions.Compiled);
+
         public List<string> Speakers { get; private set; }
         public List<string> Sentences { get; private set; }
         public List<string> GameCode { get; private set; }
 
         private readonly Rosetta Rose;
 
-        private System.Func<string, string> translateSpeaker;
+        private readonly System.Func<string, string> translateSpeaker;
 
-        public Dia(string filePath)
+        private readonly string outputFileName;
+
+        public Dia(string filePath, string outputFileName = "dia")
         {
+            this.outputFileName = outputFileName;
+
             if (File.Exists(filePath))
             {
                 Speakers = new List<string>();
                 Sentences = new List<string>();
                 GameCode = new List<string>();
 
-                Rose = new Rosetta("Rosetta.txt");
+                Rose = new Rosetta();
                 ExtractTestFromDia(filePath);
             }
         }
 
-        public Dia(List<string> speak, List<string> senten, List<string> gameC, System.Func<string, string> translateSpeaker)
+        public Dia(List<string> speak, List<string> senten, List<string> gameC, System.Func<string, string> translateSpeaker, string outputFileName = "dia")
         {
             Speakers = speak;
             Sentences = senten;
             GameCode = gameC;
+            this.outputFileName = outputFileName;
 
             this.translateSpeaker = translateSpeaker;
 
-            Rose = new Rosetta("Rosetta.txt");
+            Rose = new Rosetta();
             BuildDia();
         }
 
@@ -46,29 +57,13 @@ namespace Iconoclast
 
             DiaFile.Seek(0x06, SeekOrigin.Begin);
 
-            Br.ReadInt32(); //n Sentences
-
-            /* File extructure:
-                 MAGIC ID     | N# Files  | UNK - ALWAYS BEFORE SPEAKER LENGTH 
-             41 52 52 31 2E 30|87 10 00 00| 03 00 00 00 01 00
-               SPEAKER LENGHT | SPEAKER
-             00 00 02 00 00 00| 0C 00 00 00| 34 37 7C 36 36 7C
-                UNK - ALWAYS BEFORE SENTENCES OR GAME'S INSTRUCTIONS
-             37 38 7C 37 30 00| 01 00 00 00 02 00 00 00 E7 01
-                    SENTENCE
-             00 00| 7B 62 75 62 30 34 7D 7C 7B 6C 6F 63 6B 7D...
-                                       | UNK - ALWAYS BEFORE SENTENCES OR GAME INSTRUCTIONS
-             79 65 30 30 7D 7C 31 35 00| 01 00 00 00 02 00 00
-           G.I.| LENGHT GAME INSTRUCTIONS | UNK - ALWAYS BEFORE SPEAKER LENGTH 
-             00| 08 00 00 00| 62 75 74 74 6F 6E 73 00| 03 00 00
-             */
-
+            Br.ReadInt32();
 
             while (DiaFile.Position != DiaFile.Length)
             {
                 switch (Br.ReadInt32())
                 {
-                    case 1: //Speaker or sentence
+                    case 1:
                         Br.ReadInt32();
                         sentenceLenght = Br.ReadInt32();
                         if (Sentences.Count == GameCode.Count)
@@ -81,7 +76,7 @@ namespace Iconoclast
                         }
                         Br.ReadByte();
                         break;
-                    case 3: //New Sentence
+                    case 3:
                         Br.ReadInt64();
                         sentenceLenght = Br.ReadInt32();
                         Speakers.Add(ReadSingleLineFromDia(in DiaFile, sentenceLenght));
@@ -104,14 +99,11 @@ namespace Iconoclast
                 sentence = "|";
             }
 
-            sentence += System.Text.Encoding.Default.GetString(tempBuffer);
+            sentence += TextEncoding.GetString(tempBuffer);
 
             if (!isGameCode)
             {
-                for (int i = Rose.Stone.Length - 1; i >= 0; i--)
-                {
-                    sentence = sentence.Replace("|" + i.ToString(), Rose.Stone[i]);
-                }
+                sentence = DecodeIndexedText(sentence);
 
                 sentence = sentence.Replace("\\", "一");
 
@@ -120,12 +112,47 @@ namespace Iconoclast
                     sentence = sentence.Replace("{new}", "\n");
                 }
 
-                return sentence.Replace("|", null);
+                return sentence.Replace("|", string.Empty);
             }
 
             sentence = sentence.Replace("\\", "一");
 
             return sentence;
+        }
+
+        private static bool IsPlaceholderChar(string ch)
+        {
+            if (string.IsNullOrEmpty(ch))
+            {
+                return true;
+            }
+
+            if (ch == "?")
+            {
+                return true;
+            }
+
+            return ch.Length == 1 && ch[0] >= '\uE000' && ch[0] <= '\uF8FF';
+        }
+
+        private string DecodeIndexedText(string sentence)
+        {
+            for (int i = Rose.Stone.Length - 1; i >= 0; i--)
+            {
+                string ch = Rose.Stone[i];
+                if (string.IsNullOrEmpty(ch))
+                {
+                    continue;
+                }
+
+                string replacement = IsPlaceholderChar(ch) ? "{#" + i + "}" : ch;
+                sentence = sentence.Replace("|" + i.ToString(), replacement);
+            }
+
+            sentence = Regex.Replace(sentence, @"\|(\d+)(?=\||$)", "{#$1}");
+            sentence = Regex.Replace(sentence, @"^(\d+)(?=\||$)", "{#$1}");
+
+            return sentence.Replace("|", string.Empty);
         }
 
         public void BuildDia(string destinationDir = "Repacked File")
@@ -135,8 +162,11 @@ namespace Iconoclast
                 Directory.CreateDirectory(destinationDir);
             }
 
-            using FileStream newDia = new FileStream(Path.Combine(destinationDir, "dia"), FileMode.Create, FileAccess.Write);
-            using BinaryWriter Bw = new BinaryWriter(newDia), BwText = new BinaryWriter(newDia, System.Text.Encoding.Default);
+            string outputPath = Path.Combine(destinationDir, outputFileName);
+
+            using FileStream newDia = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+            using BinaryWriter Bw = new BinaryWriter(newDia);
+            using BinaryWriter BwText = new BinaryWriter(newDia, TextEncoding);
             char[] tempS;
 
             Bw.Write(0x31525241);
@@ -187,9 +217,31 @@ namespace Iconoclast
 
             string encondedSentence = string.Empty;
             bool isCode = false;
+            int i = 0;
 
-            foreach (char x in sentence)
+            while (i < sentence.Length)
             {
+                if (sentence[i] == '{' && i + 2 < sentence.Length && sentence[i + 1] == '#')
+                {
+                    Match match = IndexPlaceholderRegex.Match(sentence, i);
+                    if (match.Success && match.Index == i)
+                    {
+                        if (isCode)
+                        {
+                            encondedSentence += match.Value;
+                        }
+                        else
+                        {
+                            encondedSentence += match.Groups[1].Value + "|";
+                        }
+
+                        i += match.Length;
+                        continue;
+                    }
+                }
+
+                char x = sentence[i];
+
                 if (x == '{')
                 {
                     isCode = true;
@@ -198,6 +250,7 @@ namespace Iconoclast
                 {
                     encondedSentence += "}|";
                     isCode = false;
+                    i++;
                     continue;
                 }
 
@@ -212,14 +265,24 @@ namespace Iconoclast
                 }
                 else
                 {
-                    int pos = System.Array.LastIndexOf(Rose.Stone, x.ToString());
-                    encondedSentence += pos.ToString() + "|".Replace("\\\\", "\\").Replace("一", "\\");
+                    string ch = x.ToString();
+
+                    if (!Rose.TryGetIndex(ch, out int pos))
+                    {
+                        throw new System.InvalidOperationException(
+                            $"Character '{ch}' (U+{((int)x):X4}) is not in Rosetta.txt / Rosetta_CN.txt. " +
+                            "Run build_rosetta_cn.py or keep the original {#index} placeholder.");
+                    }
+
+                    encondedSentence += pos.ToString() + "|";
                 }
+
+                i++;
             }
 
-            if (encondedSentence[^1] == '|')
+            if (encondedSentence.Length > 0 && encondedSentence[^1] == '|')
             {
-                encondedSentence = encondedSentence.Remove(startIndex: encondedSentence.Length - 1);
+                encondedSentence = encondedSentence.Remove(encondedSentence.Length - 1);
             }
 
             return encondedSentence.Replace("\\\\", "\\").Replace("一", "\\");

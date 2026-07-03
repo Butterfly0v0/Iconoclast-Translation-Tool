@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using System.IO;
 using System.Text.Json;
 
@@ -11,9 +11,9 @@ namespace ConfigFile
         public Main(string jsonPath = "AppSettings.json")
         {
             configPath = jsonPath;
+            Options = new MainSettings();
 
             LoadFile();
-            System.Threading.Thread.Sleep(4000);
         }
 
         public void SaveFile()
@@ -37,6 +37,13 @@ namespace ConfigFile
 
         public void LoadFile()
         {
+            if (!File.Exists(configPath))
+            {
+                SaveFile();
+                IO_ASCII.PrintOutput.EventMessage($"Created default \"{configPath}\".");
+                return;
+            }
+
             try
             {
                 byte[] utf8Json;
@@ -47,22 +54,23 @@ namespace ConfigFile
                     fs.Read(utf8Json, 0, utf8Json.Length);
                 }
 
-                //var utf8Reader = new Utf8JsonReader(utf8Json);
                 ReadOnlySpan<byte> readOnlySpan = new ReadOnlySpan<byte>(utf8Json);
-                Options = JsonSerializer.Deserialize<MainSettings>(readOnlySpan);
+                Options = JsonSerializer.Deserialize<MainSettings>(readOnlySpan) ?? new MainSettings();
 
                 IO_ASCII.PrintOutput.EventMessage($"\"{configPath}\" has been loaded!");
-            }
-            catch (FileNotFoundException e)
-            {
-                IO_ASCII.PrintOutput.ErrorMessage(e.Message);
-                Options = new MainSettings();
             }
             catch (IOException e)
             {
                 IO_ASCII.PrintOutput.ErrorMessage(e.Message);
                 Options = new MainSettings();
             }
+            catch (Exception e)
+            {
+                IO_ASCII.PrintOutput.ErrorMessage(e.Message);
+                Options = new MainSettings();
+            }
+
+            Options ??= new MainSettings();
         }
     }
 

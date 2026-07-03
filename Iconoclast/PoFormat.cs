@@ -1,4 +1,4 @@
-﻿using System.Collections;
+using System.Collections;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -84,12 +84,9 @@ namespace Iconoclast
                 Directory.CreateDirectory(destinationDir);
             }
 
-            //Read the language used by the user' OS, this way the editor can spellcheck the translation.
-            System.Globalization.CultureInfo currentCulture = System.Threading.Thread.CurrentThread.CurrentCulture;
-
             Po po = new Po
             {
-                Header = new PoHeader("Iconoclast", "your_email", currentCulture.Name)
+                Header = new PoHeader("Iconoclast", "your_email", "zh-CN")
             };
 
             for (int i = 0; i < Sentences.Count; i++)
