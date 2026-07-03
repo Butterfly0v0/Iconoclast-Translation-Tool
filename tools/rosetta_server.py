@@ -8,6 +8,7 @@ import json
 import sys
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Type
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -28,9 +29,11 @@ from translation_store import (
     add_char_to_rosetta,
     apply_line_edit,
     char_help,
+    import_paratranz_to_edits,
     load_translation_rows,
     repack_diachn,
 )
+from paratranz_convert import parse_paratranz_file, parse_paratranz_list
 
 TOOL_DIR = Path(__file__).resolve().parent
 ROOT_DIR = TOOL_DIR.parent
@@ -251,7 +254,68 @@ class RosettaEditorHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
+        if parsed.path == "/api/translation/import-paratranz":
+            try:
+                if payload.get("use_default"):
+                    paratranz_dir = TOOLS_DIR / "paratranz"
+                    dialogue_map = parse_paratranz_file(paratranz_dir / "dialogue.json")
+                    speaker_map = parse_paratranz_file(paratranz_dir / "speakers.json")
+                    if not dialogue_map and not speaker_map:
+                        self._send_json(
+                            400,
+                            {"error": "tools/paratranz/ 中找不到 dialogue.json 或 speakers.json，请先运行导出ParaTranz.bat"},
+                        )
+                        return
+                else:
+                    dialogue_map = parse_paratranz_list(payload.get("dialogue") or [])
+                    speaker_map = parse_paratranz_list(payload.get("speakers") or [])
+                    if not dialogue_map and not speaker_map:
+                        self._send_json(400, {"error": "请提供 dialogue 与 speakers JSON 数组"})
+                        return
+
+                result = import_paratranz_to_edits(ROOT_DIR, dialogue_map, speaker_map)
+                if result.get("validation_errors"):
+                    self._send_json(400, result)
+                else:
+                    self._send_json(200, result)
+            except ValueError as exc:
+                self._send_json(400, {"error": str(exc)})
+            except Exception as exc:  # noqa: BLE001
+                self._send_json(500, {"error": str(exc)})
+            return
+
         self._send_json(404, {"error": "Unknown API"})
+
+
+class ReuseAddrThreadingHTTPServer(ThreadingHTTPServer):
+    allow_reuse_address = True
+
+
+def _bind_server(
+    host: str,
+    start_port: int,
+    handler: Type[RosettaEditorHandler],
+    *,
+    max_attempts: int = 10,
+) -> tuple[ReuseAddrThreadingHTTPServer, int]:
+    """Bind HTTP server, trying successive ports if the default is busy."""
+    last_err: OSError | None = None
+    for offset in range(max_attempts):
+        port = start_port + offset
+        try:
+            return ReuseAddrThreadingHTTPServer((host, port), handler), port
+        except OSError as exc:
+            last_err = exc
+            winerr = getattr(exc, "winerror", None)
+            if winerr not in (10013, 10048) and exc.errno not in (13, 98):
+                raise
+    end_port = start_port + max_attempts - 1
+    raise SystemExit(
+        f"无法在端口 {start_port}–{end_port} 上启动服务。\n"
+        f"请先关闭之前打开的「启动译文编辑器」或「启动字符表编辑器」窗口（旧进程可能仍占用 {start_port}），"
+        f"或使用 --port 指定其他端口。\n"
+        f"最后错误: {last_err}"
+    )
 
 
 def main() -> int:
@@ -261,8 +325,11 @@ def main() -> int:
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
 
-    httpd = ThreadingHTTPServer(("", args.port), RosettaEditorHandler)
-    url = f"http://127.0.0.1:{args.port}/{args.page}"
+    httpd, port = _bind_server("", args.port, RosettaEditorHandler)
+    if port != args.port:
+        print(f"端口 {args.port} 已被占用，已改用 {port}。")
+        print("若旧编辑器仍在运行，可直接在浏览器打开原地址，无需重复启动。")
+    url = f"http://127.0.0.1:{port}/{args.page}"
     print(f"Serving {TOOLS_DIR}")
     print(f"Open {url}")
     if not args.no_browser:

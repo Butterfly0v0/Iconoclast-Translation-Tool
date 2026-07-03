@@ -92,6 +92,9 @@
       <button class="ok" id="btnRepack">打包写入游戏 diachn</button>
       <button class="primary" id="btnSaveLine">保存当前行修改</button>
       <button id="btnValidate">检查缺字</button>
+      <button id="btnImportDefault">导入 tools/paratranz</button>
+      <button id="btnImportFiles">选择 JSON 文件导入</button>
+      <input type="file" id="fileParatranzImport" accept=".json,application/json" multiple hidden />
       <a href="rosetta_editor.html" style="margin-left:8px">← 字符表编辑器</a>
     </div>
     <p class="stats" id="status">加载中…</p>
@@ -147,6 +150,13 @@
         <details style="margin-top:16px">
           <summary class="stats">打包说明 &amp; 超出字符表的字</summary>
           <div class="help">
+            <h3>ParaTranz 导入</h3>
+            <ol>
+              <li>用 <span class="mono">导出ParaTranz.bat</span> 导出，或在 ParaTranz 编辑后<strong>同时下载</strong> <span class="mono">dialogue.json</span> 与 <span class="mono">speakers.json</span> 覆盖到 <span class="mono">tools/paratranz/</span></li>
+              <li>点「导入 tools/paratranz」读取默认目录下的 <span class="mono">dialogue.json</span> 与 <span class="mono">speakers.json</span></li>
+              <li>或点「选择 JSON 文件导入」手动选取两个文件</li>
+              <li>导入写入待打包缓存，确认后点「打包写入游戏 diachn」</li>
+            </ol>
             <h3>打包流程（本工具）</h3>
             <ol>
               <li>在此修改台词，点「保存当前行修改」</li>
@@ -300,6 +310,105 @@
       }
     }
 
+    async function importParatranz(body) {
+      const res = await api("/api/translation/import-paratranz", body);
+      await loadRows();
+      if (selected) {
+        const row = rows.find(r => r.line === selected.line);
+        if (row) selectRow(row);
+      }
+      const errCount = (res.validation_errors || []).length;
+      if (errCount) {
+        const sample = res.validation_errors.slice(0, 3).map(e => e.key || e.line).join("、");
+        toast(
+          `导入失败：${errCount} 条错误（如 ${sample}）`,
+          true,
+        );
+      } else if (res.applied_dialogue || res.applied_speakers) {
+        toast(`已导入台词 ${res.applied_dialogue} 条、说话人 ${res.applied_speakers} 条（待打包）`);
+      } else if (res.skipped_unchanged) {
+        toast(`内容与当前 diachn 一致，无新修改（跳过 ${res.skipped_unchanged} 条）`);
+      } else {
+        toast("未导入任何内容");
+      }
+      return res;
+    }
+
+    function readJsonFile(file) {
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          try {
+            resolve(JSON.parse(reader.result));
+          } catch (e) {
+            reject(new Error(`${file.name} 不是有效 JSON`));
+          }
+        };
+        reader.onerror = () => reject(new Error(`无法读取 ${file.name}`));
+        reader.readAsText(file, "UTF-8");
+      });
+    }
+
+    function pickParatranzFiles() {
+      return new Promise(resolve => {
+        const input = document.getElementById("fileParatranzImport");
+        input.value = "";
+        input.onchange = () => resolve([...input.files]);
+        input.click();
+      });
+    }
+
+    function classifyParatranzFiles(files) {
+      let dialogue = null;
+      let speakers = null;
+      let dialogueName = "";
+      let speakersName = "";
+      for (const file of files) {
+        const lower = file.name.toLowerCase();
+        if (lower.includes("speaker")) {
+          speakers = file;
+          speakersName = file.name;
+        } else if (lower.includes("dialogue")) {
+          dialogue = file;
+          dialogueName = file.name;
+        } else if (!dialogue) {
+          dialogue = file;
+          dialogueName = file.name;
+        } else if (!speakers) {
+          speakers = file;
+          speakersName = file.name;
+        }
+      }
+      return { dialogue, speakers, dialogueName, speakersName };
+    }
+
+    async function importParatranzFromDefault() {
+      if (!confirm("从 tools\\paratranz\\dialogue.json 与 speakers.json 导入？\n请确认两个文件均为 ParaTranz 最新下载。")) return;
+      try {
+        await importParatranz({ use_default: true });
+      } catch (e) {
+        toast(e.message, true);
+      }
+    }
+
+    async function importParatranzFromFiles() {
+      try {
+        const files = await pickParatranzFiles();
+        if (!files.length) return;
+        const { dialogue, speakers, dialogueName, speakersName } = classifyParatranzFiles(files);
+        if (!dialogue || !speakers) {
+          toast("请一次选中 dialogue.json 与 speakers.json 两个文件", true);
+          return;
+        }
+        const dialogueJson = await readJsonFile(dialogue);
+        const speakersJson = await readJsonFile(speakers);
+        if (!confirm(`导入 ${dialogueName} 与 ${speakersName}？\n将合并到当前待打包修改。`)) return;
+        await importParatranz({ dialogue: dialogueJson, speakers: speakersJson });
+      } catch (e) {
+        toast(e.message, true);
+      }
+    }
+
     async function repack() {
       if (!confirm("将把所有已保存的修改写入游戏 data\\diachn（会自动备份）？")) return;
       try {
@@ -331,6 +440,8 @@
     document.getElementById("btnValidate").onclick = validateCurrent;
     document.getElementById("btnRepack").onclick = repack;
     document.getElementById("btnAddChar").onclick = addChar;
+    document.getElementById("btnImportDefault").onclick = importParatranzFromDefault;
+    document.getElementById("btnImportFiles").onclick = importParatranzFromFiles;
 
     loadRows().catch(e => toast(e.message, true));
 

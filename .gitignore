@@ -394,5 +394,15 @@ FodyWeavers.xsd
 *.msm
 *.msp
 
-# JetBrains Rider
-*.sln.iml
+# Local editor / translation caches (generated at runtime)
+tools/translation_edits.json
+tools/dialogue_crossref.json
+tools/dialogue_crossref.html
+tools/dialogue_crossref.csv
+tools/paratranz/
+tools/glyph_samples/
+tools/ocr_results*.txt
+tools/_zi_scan.txt
+Rosetta_CN_test.txt
+indices_used.txt
+diachn

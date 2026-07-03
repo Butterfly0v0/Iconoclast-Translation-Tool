@@ -30,6 +30,31 @@ SPEAKER_LINE_KEY_RE = re.compile(r"^line\.(\d+)\.speaker$")
 UNIQUE_SPEAKER_KEY_RE = re.compile(r"^speaker\..+$")
 
 
+def paratranz_entry_translation(entry: dict) -> str:
+    """Read translation text from ParaTranz JSON entry (field names vary by export)."""
+    for key in ("translation", "dest", "text", "message"):
+        value = entry.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def build_speaker_lookup(by_original: dict[str, str]) -> dict[str, str]:
+    lookup = dict(by_original)
+    for name, translation in by_original.items():
+        lookup.setdefault(name.casefold(), translation)
+    return lookup
+
+
+def lookup_speaker_translation(lookup: dict[str, str], speaker_en: str) -> str:
+    if not speaker_en:
+        return ""
+    direct = lookup.get(speaker_en)
+    if direct:
+        return direct
+    return lookup.get(speaker_en.casefold(), "")
+
+
 def _speaker_slug(name: str) -> str:
     slug = re.sub(r"[^0-9A-Za-z\u0080-\uFFFF]+", "_", name.strip())
     slug = slug.strip("_").upper()
@@ -168,16 +193,24 @@ def export_paratranz(
     }
 
 
-def _parse_paratranz_entries(path: Path) -> dict[str, dict]:
-    if not path.exists():
-        return {}
-    payload = json.loads(path.read_text(encoding="utf-8"))
+def parse_paratranz_list(payload: list) -> dict[str, dict]:
     if not isinstance(payload, list):
-        raise ValueError(f"{path} 应为 JSON 数组")
+        raise ValueError("ParaTranz JSON 应为数组")
     return {entry["key"]: entry for entry in payload if entry.get("key")}
 
 
-def _speaker_translations(
+def parse_paratranz_file(path: Path) -> dict[str, dict]:
+    if not path.exists():
+        return {}
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    return parse_paratranz_list(payload)
+
+
+def _parse_paratranz_entries(path: Path) -> dict[str, dict]:
+    return parse_paratranz_file(path)
+
+
+def speaker_translations(
     speaker_map: dict[str, dict],
 ) -> tuple[dict[str, str], dict[int, str], list[dict]]:
     """Return (by English name, by line number for legacy keys, validation errors)."""
@@ -186,7 +219,7 @@ def _speaker_translations(
     errors: list[dict] = []
 
     for key, entry in speaker_map.items():
-        translation = (entry.get("translation") or "").strip()
+        translation = paratranz_entry_translation(entry)
         if not translation:
             continue
 
@@ -309,7 +342,7 @@ def import_paratranz(
             validation_errors.append({"key": key, "error": f"行号 {line_no} 超出范围"})
             continue
 
-        translation = (entry.get("translation") or "").strip()
+        translation = paratranz_entry_translation(entry)
         if not translation:
             skipped_empty += 1
             continue
@@ -344,7 +377,7 @@ def import_paratranz(
             dia.gamecodes[index] = encoded
         applied_dialogue += 1
 
-    speakers_by_original, speakers_by_line, speaker_key_errors = _speaker_translations(speaker_map)
+    speakers_by_original, speakers_by_line, speaker_key_errors = speaker_translations(speaker_map)
     validation_errors.extend(speaker_key_errors)
 
     for line_no, translation in sorted(speakers_by_line.items()):
@@ -371,7 +404,9 @@ def import_paratranz(
             if not speaker_en:
                 continue
 
-            translation = speakers_by_original.get(speaker_en)
+            translation = lookup_speaker_translation(
+                build_speaker_lookup(speakers_by_original), speaker_en
+            )
             if not translation:
                 continue
 

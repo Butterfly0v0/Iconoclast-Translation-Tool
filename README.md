@@ -2,7 +2,7 @@
 
 Fan-made toolkit for translating [Iconoclasts](https://store.steampowered.com/app/393520/Iconoclasts/) dialogue. This fork adds **Simplified/Traditional Chinese** support, browser-based editors, and [ParaTranz](https://paratranz.cn/) import/export.
 
-> **中文说明：** See [README_CN.md](README_CN.md) for the full Chinese localization guide.
+> **中文说明：** See [README_ZH.md](README_ZH.md) (also [README_CN.md](README_CN.md)).
 
 **Fork repository:** https://github.com/Butterfly0v0/Iconoclast-Translation-Tool  
 **Upstream:** https://github.com/Liquid-S/Iconoclast-Translation-Tool
@@ -63,26 +63,44 @@ See `tools\glyphs\README.txt` for naming rules.
 
 ### 3. Translation editors
 
+Both editors run a local web server on **http://127.0.0.1:8765** (if that port is busy, the server tries 8766, 8767, … automatically). Close the previous editor window before starting a second instance, or reuse the already-open URL.
+
 | Tool | Batch file | Purpose |
 |------|------------|---------|
-| Character / dialogue editor | `启动字符表编辑器.bat` | Map indices to Han characters; search English lines; conflict checks |
-| In-game Chinese text editor | `启动译文编辑器.bat` | Edit `diachn` lines, validate chars, repack |
-| ParaTranz export / import | `导出ParaTranz.bat` / `导入ParaTranz.bat` | Collaborate on [ParaTranz](https://paratranz.cn/) |
+| Character / dialogue editor | `启动字符表编辑器.bat` | Map indices to Han characters; search English lines; conflict checks; duplicate-index view |
+| In-game Chinese text editor | `启动译文编辑器.bat` | Edit `diachn` lines, validate chars, repack, **import ParaTranz JSON** |
+| ParaTranz export / import (CLI) | `导出ParaTranz.bat` / `导入ParaTranz.bat` | Collaborate on [ParaTranz](https://paratranz.cn/) |
 
 ### 4. ParaTranz workflow
 
+**Export**
+
 ```powershell
 python tools\paratranz_convert.py export
-# Edit tools\paratranz\dialogue.json and speakers.json on ParaTranz
+```
+
+**Edit on ParaTranz**, then download both `dialogue.json` and `speakers.json` into `tools\paratranz\`.
+
+**Import — option A (translation editor, recommended)**
+
+1. Run `启动译文编辑器.bat`
+2. Click **导入 tools/paratranz** (default folder) or **选择 JSON 文件导入** (pick both files)
+3. Review pending edits → **打包写入游戏 diachn**
+
+**Import — option B (command line)**
+
+```powershell
 python tools\paratranz_convert.py import --target working
 python tools\paratranz_convert.py import --target game
 ```
+
+Before the first ParaTranz import, run `build_dialogue_crossref.py --cn-diff-only`.
 
 **Output files**
 
 | File | Contents |
 |------|----------|
-| `dialogue.json` | One entry per dialogue line (`line.00005`, …) |
+| `dialogue.json` | One entry per dialogue line (`line.00005`, …) — **4250 lines** |
 | `speakers.json` | **Deduplicated** speakers by English name (`speaker.MINA`, `speaker.BLACK`, …) |
 
 **JSON entry format**
@@ -98,7 +116,7 @@ python tools\paratranz_convert.py import --target game
 
 **Speaker import:** translations from `speaker.*` keys are applied to every line whose `speaker_en` matches the entry's `original` field (via `dialogue_crossref.json`). Legacy per-line keys `line.00005.speaker` are still supported.
 
-Before first ParaTranz import, run `build_dialogue_crossref.py --cn-diff-only`.
+Imports write to `tools\translation_edits.json` (pending cache). Only fields that differ from the current `diachn` are marked as edited. Repack writes dialogue and speaker fields independently so speaker-only imports do not wipe dialogue text.
 
 ### 5. Command-line helpers
 
@@ -121,6 +139,17 @@ Keep `Rosetta_CN.txt` synced in the tool root and `bin\Release\net7.0\`.
 
 ---
 
+## Troubleshooting
+
+| Issue | Fix |
+|-------|-----|
+| `PermissionError` / port 8765 on startup | Another editor window is still running. Close it, refresh the browser, or let the server pick the next free port (8766+). |
+| ParaTranz import shows many skipped lines | Expected if translations match current `diachn`. Only changed entries are applied. |
+| Speaker names not updating after import | Ensure `speakers.json` uses deduplicated `speaker.*` keys and run crossref build first. Then repack from the translation editor. |
+| “加载失败” in character editor | Refresh the page after updating the tool; restart the batch file if the server was started before a code update. |
+
+---
+
 ## Project layout
 
 | Path | Description |
@@ -129,9 +158,10 @@ Keep `Rosetta_CN.txt` synced in the tool root and `bin\Release\net7.0\`.
 | `tools/` | Python parsers, web editors, ParaTranz converter |
 | `tools/glyphs/NNNNN.png` | Manually maintained 22×22 glyph previews |
 | `tools/paratranz/` | Exported ParaTranz JSON (generated locally) |
+| `tools/translation_edits.json` | Pending translation edits cache (local, generated) |
 | `Rosetta.txt` | Base Latin/symbol table |
 | `Rosetta_CN.txt` | Extended Chinese character table |
-| `README_CN.md` | Full Chinese documentation |
+| `README_ZH.md` | Full Chinese documentation |
 
 ---
 

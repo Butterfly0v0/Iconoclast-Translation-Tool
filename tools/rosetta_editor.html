@@ -826,8 +826,7 @@
       const ch = lines[index] || "";
       document.getElementById("indexChar").value = isPua(ch) ? "" : ch;
       document.getElementById("indexMeta").textContent =
-        `当前: ${ch ? (isPua(ch) ? "占位符" : ch) : "空"}`
-        + (indexMetaText(index) ? ` | ${indexMetaText(index)}` : "");
+        `当前: ${ch ? (isPua(ch) ? "占位符" : ch) : "空"}`;
     }
 
     async function saveIndexAt(index, char, forceReplace = false) {
