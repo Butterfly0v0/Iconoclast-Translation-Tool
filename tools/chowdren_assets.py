@@ -152,7 +152,8 @@ def extract_image(data: bytes, entry: ImageEntry) -> Image.Image:
 def build_rosetta_glyph_map(entries: list[ImageEntry], size: tuple[int, int] = (22, 22)) -> list[int]:
     """List asset ids for each 22x22 glyph in archive scan order (ordinal -> asset).
 
-    NOTE: Rosetta slot N is NOT ordinal N. Use font_mapping.get_rosetta_asset_map().
+    NOTE: Rosetta slot N is NOT archive ordinal N. For editor previews use
+    tools/glyphs/NNNNN.png where NNNNN is the Rosetta index.
     """
     glyph_assets = [e.index for e in entries if (e.width, e.height) == size]
     if not glyph_assets:

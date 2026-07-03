@@ -123,7 +123,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if not args.rosetta.exists():
-        print(f"Error: missing {args.rosetta}. Run build_rosetta_ocr.py first.")
+        print(f"Error: missing {args.rosetta}. Create it with build_rosetta_cn.py or copy from the tool folder.")
         return 1
 
     base_path = tool_dir / "Rosetta.txt"

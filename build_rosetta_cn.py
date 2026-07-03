@@ -131,28 +131,13 @@ def main() -> int:
 
     charset = None
     assets_path = args.game_dir / "Assets.dat"
-    ocr_meta = tool_dir / "tools" / "rosetta_ocr_meta.json"
-    if ocr_meta.exists():
-        import json
-
-        payload = json.loads(ocr_meta.read_text(encoding="utf-8"))
-        entries = payload.get("entries", {})
-        charset = base[:]
-        for key, info in entries.items():
-            idx = int(key)
-            ch = info.get("char", "")
-            if ch and len(ch) == 1 and ord(ch) < 0xE000:
-                while len(charset) <= idx:
-                    charset.append("")
-                charset[idx] = ch
-        print(f"Loaded OCR/manual mappings from {ocr_meta.name}")
-    elif assets_path.exists():
+    if assets_path.exists():
         charset = try_extract_charset_from_assets(assets_path, base)
         if charset:
             print(f"Found embedded charset in Assets.dat ({len(charset)} characters)")
         else:
             print("Could not auto-extract charset from Assets.dat")
-            print("Tip: run tools/build_rosetta_ocr.py for glyph OCR.")
+            print("Tip: use the character editor or resolve_sentence.py to fill Rosetta_CN.txt.")
 
     extended = build_extended_table(base, max_index, charset)
     write_rosetta_cn(out_path, extended)

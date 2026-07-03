@@ -40,7 +40,7 @@ Iconoclasts Chinese text uses a custom Rosetta index font (~3537 glyphs in `Asse
 
 | Method | Command / action |
 |--------|------------------|
-| OCR pipeline | `python tools\build_rosetta_ocr.py` |
+| Placeholder scaffold | `python build_rosetta_cn.py` |
 | Sentence resolver | `python tools\resolve_sentence.py --indices "{#3399}!" --text "骗子!"` |
 | **Character editor (recommended)** | Double-click `启动字符表编辑器.bat` |
 
@@ -69,9 +69,9 @@ Each JSON entry: `key`, `original` (English), `translation` (Chinese), optional 
 python tools\build_dialogue_crossref.py --cn-diff-only
 python tools\apply_translation.py set --line 5 --text "{bub06}...骗子!"
 python tools\apply_translation.py repack --target game
-python tools\build_font_mapping.py
-python tools\export_glyphs.py
 ```
+
+Glyph preview PNGs live in `tools\glyphs\` as `NNNNN.png` (Rosetta index). Edit or replace files there directly; the editor loads them by filename.
 
 ---
 
@@ -85,7 +85,9 @@ python tools\export_glyphs.py
 | `Rosetta_CN.txt` | Extended Chinese character table (user-generated) |
 | `README_CN.md` | Full Chinese documentation |
 
-Generated at runtime (not required in repo): `tools\glyphs\`, `tools\paratranz\`, `tools\dialogue_crossref.*`, local `diachn` copies.
+Generated at runtime (not required in repo): `tools\paratranz\`, `tools\dialogue_crossref.*`, local `diachn` copies.
+
+Shipped in repo: `tools\glyphs\NNNNN.png` — manually maintained 22×22 previews (`NNNNN` = Rosetta index).
 
 ---
 

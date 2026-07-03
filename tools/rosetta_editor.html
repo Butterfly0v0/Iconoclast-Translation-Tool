@@ -307,7 +307,6 @@
     const BASE = 156;
     let lines = [];
     let savedLines = [];
-    let meta = {};
     let dialogue = [];
     let selectedRow = null;
     let dirty = false;
@@ -452,9 +451,6 @@
       const ro = await api("/api/rosetta");
       lines = ro.lines;
       maxIndex = ro.stats.max_index;
-      try {
-        meta = (await api("/api/meta")).entries || {};
-      } catch { meta = {}; }
       const dlg = await fetch("dialogue_crossref.json");
       dialogue = await dlg.json();
       savedLines = lines.slice();
@@ -679,14 +675,6 @@
       return parseCnIndices(row.cn_indices).filter(i => !isIndexKnown(i));
     }
 
-    function indexMetaText(index) {
-      const m = meta[String(index)] || {};
-      const parts = [];
-      if (m.ocr_guess) parts.push(`OCR: ${m.ocr_guess}`);
-      if (m.confidence) parts.push(`${(m.confidence * 100).toFixed(0)}%`);
-      return parts.join(" ");
-    }
-
     function renderPendingGlyphs() {
       const section = document.getElementById("pendingGlyphsSection");
       const list = document.getElementById("pendingGlyphsList");
@@ -710,7 +698,6 @@
         slot.innerHTML = `
           <div class="idx-label">{#${index}}</div>
           <img src="glyphs/${String(index).padStart(5, "0")}.png" alt="${index}" />
-          <div class="slot-meta">${escapeHtml(indexMetaText(index))}</div>
           <input maxlength="1" placeholder="?" />
           <button type="button" class="primary">保存</button>`;
         const img = slot.querySelector("img");

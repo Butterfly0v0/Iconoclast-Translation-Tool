@@ -24,23 +24,19 @@ pip install -r tools\requirements.txt
 
 
 
-3. 生成中文字符表（推荐 OCR 流程）：
+3. 生成中文字符表骨架：
 
 
 
 ```powershell
 
-python tools\build_rosetta_ocr.py
+python build_rosetta_cn.py
 
 ```
 
 
 
-这会从 `Assets.dat` 导出 22×22 字形图、OCR 识别，并生成 `Rosetta_CN.txt`。
-
-
-
-旧版占位符脚本仍可用：`python build_rosetta_cn.py`
+这会分析 `diachn` 中用到的索引，并生成带 PUA 占位符的 `Rosetta_CN.txt`。之后请用字符表编辑器或 `resolve_sentence.py` 填写汉字映射。
 
 
 
@@ -48,45 +44,11 @@ python tools\build_rosetta_ocr.py
 
 
 
-## 三种字符表工具
+## 字符表工具
 
 
 
-### 1. 自动 OCR（`tools/build_rosetta_ocr.py`）
-
-
-
-从游戏字体图集自动识别汉字，写入 `Rosetta_CN.txt`。
-
-
-
-```powershell
-
-# 导出字形 + OCR（首次较慢，约 3500 张图）
-
-python tools\build_rosetta_ocr.py
-
-
-
-# 仅重新 OCR（已有 tools\glyphs\）
-
-python tools\build_rosetta_ocr.py --export-glyphs
-
-```
-
-
-
-- 索引 **0–155**：沿用 `Rosetta.txt` 拉丁字符
-
-- 索引 **156+**：OCR 识别 22×22 字形（`font02` 中文字体）
-
-- 识别失败的位置用 PUA 占位符（`U+E000+`），可在标注页补全
-
-- 元数据：`tools\rosetta_ocr_meta.json`
-
-
-
-### 2. 句子反推（`tools/resolve_sentence.py`）
+### 1. 句子反推（`tools/resolve_sentence.py`）
 
 
 
@@ -128,11 +90,11 @@ python tools\resolve_sentence.py --file pairs.json
 
 
 
-### 3. 字形标注页（`tools/glyph_labeler.html`）
+### 2. 字形标注页（`tools/glyph_labeler.html`）
 
 
 
-OCR 不准或待确认的字形，可在浏览器里人工标注并导出 `Rosetta_CN.txt`。
+待确认的字形，可在浏览器里人工标注并导出 `Rosetta_CN.txt`。
 
 
 
@@ -156,7 +118,7 @@ python tools\serve_labeler.py
 
 
 
-### 4. 台词对照表（`tools/build_dialogue_crossref.py`）
+### 3. 台词对照表（`tools/build_dialogue_crossref.py`）
 
 
 
@@ -182,7 +144,7 @@ python tools\build_dialogue_crossref.py --cn-diff-only
 
 
 
-### 5. 字符表编辑器（推荐，免命令行）
+### 4. 字符表编辑器（推荐，免命令行）
 
 
 
@@ -202,7 +164,7 @@ python tools\build_dialogue_crossref.py --cn-diff-only
 
 
 
-### 6. ParaTranz 协作翻译（`tools/paratranz_convert.py`）
+### 5. ParaTranz 协作翻译（`tools/paratranz_convert.py`）
 
 与 [ParaTranz](https://paratranz.cn/) 协作时，可将台词导出为两个 JSON 文件（台词与说话人分开），在 ParaTranz 中编辑后再导入写回 `diachn`。
 
@@ -216,7 +178,7 @@ python tools\build_dialogue_crossref.py --cn-diff-only
 
 每条记录格式：`key`、`original`（英文）、`translation`（中文）、`context`（行号、编码等元信息，可选）。
 
-### 7. 译文编辑器（修改官方中文译文）
+### 6. 译文编辑器（修改官方中文译文）
 
 
 
@@ -356,11 +318,11 @@ python tools\apply_translation.py slots
 
 
 
-- 游戏 `{font02}` 中文字体：每个 Rosetta 索引对应 `Assets.dat` 中一张 **22×22** 字形图（共 3537 张），**不是**按资源包扫描顺序一一对应，需先运行 `重建字形映射.bat` 或 `python tools\build_font_mapping.py` + `python tools\export_glyphs.py` 生成正确预览
+- 游戏 `{font02}` 中文字体：编辑器预览使用 `tools\glyphs\NNNNN.png`（`NNNNN` 为 Rosetta 索引，如 `#3399` → `03399.png`）。**本目录为人工维护，请勿从 Assets.dat 自动导出覆盖。**
 
 - 索引 **0–155** 为拉丁/符号；**156+** 为中文（及共用符号）
 
-- 若 OCR/标注未完成，仍可用 `{#索引}` 占位符编辑并回写
+- 若字符表未填完，仍可用 `{#索引}` 占位符编辑并回写
 
 - 工具使用 **UTF-8**，避免中文 Windows 下 GBK 乱码
 
@@ -374,14 +336,12 @@ python tools\apply_translation.py slots
 
 |------|------|
 
-| `tools/chowdren_assets.py` | 解析 Assets.dat、按索引提取字形 |
+| `tools/chowdren_assets.py` | 解析 Assets.dat（高级用途） |
 
-| `tools/font_mapping.py` | Rosetta 索引 → 字形图映射 |
-| `tools/build_font_mapping.py` | 构建映射缓存 |
-| `tools/export_glyphs.py` | 导出 `tools/glyphs/00000.png` … |
-| `重建字形映射.bat` | 一键重建映射并导出 PNG |
+| `tools/glyphs/NNNNN.png` | **字形预览图**（人工维护，文件名 = Rosetta 索引） |
+| `tools/glyphs/README.txt` | 字形文件命名说明 |
 
-| `tools/build_rosetta_ocr.py` | OCR → `Rosetta_CN.txt` |
+| `build_rosetta_cn.py` | 生成 `Rosetta_CN.txt` 骨架 |
 
 | `tools/resolve_sentence.py` | 已知句子 → 更新字符表 |
 

@@ -130,7 +130,6 @@
 
     let baseRosetta = [];
     let labels = {};
-    let meta = {};
     let maxIndex = 3454;
 
     const grid = document.getElementById("grid");
@@ -161,17 +160,6 @@
         baseRosetta = (await loadText("../Rosetta.txt")).replace(/\r/g, "").split("\n").filter(Boolean);
       } catch {
         baseRosetta = [];
-      }
-
-      try {
-        const metaJson = JSON.parse(await loadText("rosetta_ocr_meta.json"));
-        maxIndex = metaJson.max_index ?? maxIndex;
-        for (const [k, v] of Object.entries(metaJson.entries ?? {})) {
-          meta[k] = v;
-          if (v.char && !isPlaceholder(v.char)) labels[k] = v.char;
-        }
-      } catch {
-        console.warn("无 rosetta_ocr_meta.json，将仅使用本地标注");
       }
 
       try {
@@ -254,10 +242,6 @@
 
         const metaEl = document.createElement("div");
         metaEl.className = "meta";
-        const m = meta[String(i)];
-        if (m?.source) {
-          metaEl.textContent = `${m.source}${m.confidence ? ` (${(m.confidence * 100).toFixed(0)}%)` : ""}${m.ocr_guess ? ` · 猜测: ${m.ocr_guess}` : ""}`;
-        }
 
         card.append(img, idx, input, metaEl);
         grid.appendChild(card);

@@ -76,15 +76,6 @@ class RosettaEditorHandler(BaseHTTPRequestHandler):
                 self._send_json(500, {"error": str(exc)})
             return
 
-        if parsed.path == "/api/meta":
-            meta_path = TOOLS_DIR / "rosetta_ocr_meta.json"
-            if meta_path.exists():
-                payload = json.loads(meta_path.read_text(encoding="utf-8"))
-                self._send_json(200, payload)
-            else:
-                self._send_json(200, {"entries": {}})
-            return
-
         if parsed.path == "/api/translations":
             try:
                 rows, dia_path = load_translation_rows(ROOT_DIR)
