@@ -26,7 +26,25 @@ from dia_writer import backup_file, read_header_count, write_dia_file
 from translation_store import load_crossref, merged_rosetta_lines, tool_paths
 
 LINE_KEY_RE = re.compile(r"^line\.(\d+)$")
-SPEAKER_KEY_RE = re.compile(r"^line\.(\d+)\.speaker$")
+SPEAKER_LINE_KEY_RE = re.compile(r"^line\.(\d+)\.speaker$")
+UNIQUE_SPEAKER_KEY_RE = re.compile(r"^speaker\..+$")
+
+
+def _speaker_slug(name: str) -> str:
+    slug = re.sub(r"[^0-9A-Za-z\u0080-\uFFFF]+", "_", name.strip())
+    slug = slug.strip("_").upper()
+    return slug or "UNKNOWN"
+
+
+def _unique_speaker_key(name: str, used: set[str]) -> str:
+    base = f"speaker.{_speaker_slug(name)}"
+    key = base
+    suffix = 2
+    while key in used:
+        key = f"{base}_{suffix}"
+        suffix += 1
+    used.add(key)
+    return key
 
 
 def _tool_dir() -> Path:
@@ -63,7 +81,7 @@ def export_paratranz(
     rows = build_rows(en_data, cn_data, rosetta, cn_map, cn_diff_only=False)
 
     dialogue_entries: list[dict] = []
-    speaker_entries: list[dict] = []
+    speaker_groups: dict[str, dict] = {}
     skipped = 0
 
     for row in rows:
@@ -91,19 +109,43 @@ def export_paratranz(
         )
 
         speaker_en = row["speaker_en"]
-        if speaker_en:
-            speaker_cn_raw = row["speaker_cn_indices"]
-            speaker_entries.append(
-                {
-                    "key": f"line.{line_no:05d}.speaker",
-                    "original": speaker_en,
-                    "translation": row["speaker_cn"],
-                    "context": _build_context(
-                        speaker_encoding=speaker_cn_raw,
-                        line=line_no,
-                    ),
-                }
-            )
+        if not speaker_en:
+            continue
+
+        group = speaker_groups.setdefault(
+            speaker_en,
+            {
+                "original": speaker_en,
+                "translation": row["speaker_cn"],
+                "lines": [],
+                "encodings": set(),
+            },
+        )
+        group["lines"].append(line_no)
+        if row["speaker_cn_indices"]:
+            group["encodings"].add(row["speaker_cn_indices"])
+        if not group["translation"] and row["speaker_cn"]:
+            group["translation"] = row["speaker_cn"]
+
+    speaker_entries: list[dict] = []
+    used_speaker_keys: set[str] = set()
+    for speaker_en in sorted(speaker_groups, key=lambda name: min(speaker_groups[name]["lines"])):
+        info = speaker_groups[speaker_en]
+        lines = sorted(info["lines"])
+        encoding = next(iter(info["encodings"])) if len(info["encodings"]) == 1 else ""
+        speaker_entries.append(
+            {
+                "key": _unique_speaker_key(speaker_en, used_speaker_keys),
+                "original": info["original"],
+                "translation": info["translation"],
+                "context": _build_context(
+                    speaker_encoding=encoding,
+                    line_count=len(lines),
+                    first_line=lines[0],
+                    last_line=lines[-1],
+                ),
+            }
+        )
 
     out_dir.mkdir(parents=True, exist_ok=True)
     dialogue_out.write_text(
@@ -118,6 +160,7 @@ def export_paratranz(
     return {
         "dialogue_count": len(dialogue_entries),
         "speaker_count": len(speaker_entries),
+        "unique_speakers": len(speaker_groups),
         "skipped_non_dialogue": skipped,
         "total_rows": len(rows),
         "dialogue_out": str(dialogue_out),
@@ -132,6 +175,85 @@ def _parse_paratranz_entries(path: Path) -> dict[str, dict]:
     if not isinstance(payload, list):
         raise ValueError(f"{path} 应为 JSON 数组")
     return {entry["key"]: entry for entry in payload if entry.get("key")}
+
+
+def _speaker_translations(
+    speaker_map: dict[str, dict],
+) -> tuple[dict[str, str], dict[int, str], list[dict]]:
+    """Return (by English name, by line number for legacy keys, validation errors)."""
+    by_original: dict[str, str] = {}
+    by_line: dict[int, str] = {}
+    errors: list[dict] = []
+
+    for key, entry in speaker_map.items():
+        translation = (entry.get("translation") or "").strip()
+        if not translation:
+            continue
+
+        line_match = SPEAKER_LINE_KEY_RE.match(key)
+        if line_match:
+            by_line[int(line_match.group(1))] = translation
+            continue
+
+        if not UNIQUE_SPEAKER_KEY_RE.match(key):
+            errors.append({"key": key, "error": "无效的 speaker key 格式"})
+            continue
+
+        original = (entry.get("original") or "").strip()
+        if not original:
+            errors.append({"key": key, "error": "缺少 original（英文说话人名）"})
+            continue
+
+        if original in by_original and by_original[original] != translation:
+            errors.append(
+                {
+                    "key": key,
+                    "error": f"说话人 {original!r} 存在冲突译文",
+                }
+            )
+            continue
+        by_original[original] = translation
+
+    return by_original, by_line, errors
+
+
+def _apply_speaker_translation(
+    *,
+    line_no: int,
+    translation: str,
+    lines: list[str],
+    dia,
+    validation_errors: list[dict],
+    encode_errors: list[dict],
+    key: str,
+) -> bool:
+    index = line_no - 1
+    if index < 0 or index >= row_count(dia):
+        validation_errors.append({"key": key, "error": f"行号 {line_no} 超出范围"})
+        return False
+
+    validation = validate_text(translation, lines)
+    if not validation["ok"]:
+        validation_errors.append(
+            {
+                "key": key,
+                "line": line_no,
+                "field": "speaker",
+                "missing": validation["missing"],
+            }
+        )
+        return False
+
+    try:
+        encoded = encode_to_pipe(translation, lines).encode("utf-8")
+    except ValueError as exc:
+        encode_errors.append({"key": key, "line": line_no, "error": str(exc)})
+        return False
+
+    while len(dia.speakers) <= index:
+        dia.speakers.append(b"")
+    dia.speakers[index] = encoded
+    return True
 
 
 def _resolve_cn_field(tool_dir: Path, line_no: int, dia, cross_by_line: dict[str, dict]) -> str:
@@ -222,45 +344,48 @@ def import_paratranz(
             dia.gamecodes[index] = encoded
         applied_dialogue += 1
 
-    for key, entry in speaker_map.items():
-        match = SPEAKER_KEY_RE.match(key)
-        if not match:
-            validation_errors.append({"key": key, "error": "无效的 speaker key 格式"})
-            continue
+    speakers_by_original, speakers_by_line, speaker_key_errors = _speaker_translations(speaker_map)
+    validation_errors.extend(speaker_key_errors)
 
-        line_no = int(match.group(1))
-        index = line_no - 1
-        if index < 0 or index >= row_count(dia):
-            validation_errors.append({"key": key, "error": f"行号 {line_no} 超出范围"})
-            continue
+    for line_no, translation in sorted(speakers_by_line.items()):
+        key = f"line.{line_no:05d}.speaker"
+        if _apply_speaker_translation(
+            line_no=line_no,
+            translation=translation,
+            lines=lines,
+            dia=dia,
+            validation_errors=validation_errors,
+            encode_errors=encode_errors,
+            key=key,
+        ):
+            applied_speakers += 1
 
-        translation = (entry.get("translation") or "").strip()
-        if not translation:
-            skipped_empty += 1
-            continue
+    if speakers_by_original:
+        total = row_count(dia)
+        for line_no in range(1, total + 1):
+            if line_no in speakers_by_line:
+                continue
 
-        validation = validate_text(translation, lines)
-        if not validation["ok"]:
-            validation_errors.append(
-                {
-                    "key": key,
-                    "line": line_no,
-                    "field": "speaker",
-                    "missing": validation["missing"],
-                }
-            )
-            continue
+            cross = cross_by_line.get(str(line_no), {})
+            speaker_en = cross.get("speaker_en", "")
+            if not speaker_en:
+                continue
 
-        try:
-            encoded = encode_to_pipe(translation, lines).encode("utf-8")
-        except ValueError as exc:
-            encode_errors.append({"key": key, "line": line_no, "error": str(exc)})
-            continue
+            translation = speakers_by_original.get(speaker_en)
+            if not translation:
+                continue
 
-        while len(dia.speakers) <= index:
-            dia.speakers.append(b"")
-        dia.speakers[index] = encoded
-        applied_speakers += 1
+            key = f"speaker:{speaker_en}"
+            if _apply_speaker_translation(
+                line_no=line_no,
+                translation=translation,
+                lines=lines,
+                dia=dia,
+                validation_errors=validation_errors,
+                encode_errors=encode_errors,
+                key=key,
+            ):
+                applied_speakers += 1
 
     result = {
         "dry_run": dry_run,
@@ -312,7 +437,10 @@ def cmd_export(args: argparse.Namespace) -> int:
         speakers_out=speakers_out,
     )
 
-    print(f"导出完成: {stats['dialogue_count']} 条台词, {stats['speaker_count']} 条说话人")
+    print(
+        f"导出完成: {stats['dialogue_count']} 条台词, "
+        f"{stats['speaker_count']} 个说话人（去重后）"
+    )
     print(f"  跳过非台词行: {stats['skipped_non_dialogue']} / {stats['total_rows']}")
     print(f"  台词: {stats['dialogue_out']}")
     print(f"  说话人: {stats['speakers_out']}")
